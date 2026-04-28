@@ -19,6 +19,12 @@ class ActionSummaryResponse(BaseModel):
     confidence: float
 
 
+class ActionSegment(BaseModel):
+    action: str
+    start_ms: int
+    end_ms: int
+
+
 class RealtimeStatus(BaseModel):
     action: str = "idle"
     confidence: float = 0.0
@@ -29,3 +35,8 @@ class RealtimeStatus(BaseModel):
 
 class HistoryResponse(BaseModel):
     items: list[RealtimeStatus]
+
+
+class ActionTimelineResponse(BaseModel):
+    window_ms: int
+    segments: list[ActionSegment]

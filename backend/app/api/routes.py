@@ -3,7 +3,15 @@ import asyncio
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.core.config import get_settings
-from app.models.schemas import ActionSummaryRequest, ActionSummaryResponse, HistoryResponse, RealtimeStatus
+import time
+
+from app.models.schemas import (
+    ActionSummaryRequest,
+    ActionSummaryResponse,
+    ActionTimelineResponse,
+    HistoryResponse,
+    RealtimeStatus,
+)
 from app.services.inference_service import InferenceService
 from app.services.stream_service import state
 
@@ -30,6 +38,13 @@ def status() -> RealtimeStatus:
 @router.get("/history", response_model=HistoryResponse)
 def history(limit: int = 100) -> HistoryResponse:
     return HistoryResponse(items=state.get_history(limit))
+
+
+@router.get("/summary", response_model=ActionTimelineResponse)
+def summary(window_ms: int = 5000) -> ActionTimelineResponse:
+    now_ms = int(time.time() * 1000)
+    segments = state.summarize_actions(window_ms, now_ms)
+    return ActionTimelineResponse(window_ms=window_ms, segments=segments)
 
 
 @router.websocket("/ws")

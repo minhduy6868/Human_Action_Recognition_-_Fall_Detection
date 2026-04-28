@@ -47,6 +47,10 @@ class StreamService:
         return None
 
     def _run(self) -> None:
+        if settings.demo_mode:
+            self._run_demo()
+            return
+
         try:
             import mediapipe as mp
         except ImportError:
@@ -98,6 +102,25 @@ class StreamService:
         cap.release()
         pose_model.close()
         self._running = False
+
+    def _run_demo(self) -> None:
+        actions = ["standing", "walking", "sitting", "lying"]
+        index = 0
+        while self._running:
+            ts_ms = int(time.time() * 1000)
+            action = actions[index % len(actions)]
+            fall = action == "lying" and index % 5 == 0
+            status = RealtimeStatus(
+                action=action,
+                confidence=0.75,
+                fall=fall,
+                timestamp_ms=ts_ms,
+                track_id="demo",
+            )
+            state.update(status)
+            self._action_buffer.append((ts_ms, action))
+            index += 1
+            time.sleep(settings.demo_interval_ms / 1000)
 
 
 stream_service = StreamService()

@@ -1,6 +1,6 @@
 from threading import Lock
 
-from app.models.schemas import RealtimeStatus
+from app.models.schemas import ActionSegment, RealtimeStatus
 
 
 class RealtimeState:
@@ -24,3 +24,29 @@ class RealtimeState:
     def get_history(self, limit: int) -> list[RealtimeStatus]:
         with self._lock:
             return list(self._history[-limit:])
+
+    def summarize_actions(self, window_ms: int, now_ms: int) -> list[ActionSegment]:
+        with self._lock:
+            items = [
+                item for item in self._history if item.timestamp_ms >= now_ms - window_ms
+            ]
+
+        if not items:
+            return []
+
+        segments: list[ActionSegment] = []
+        current_action = items[0].action
+        start_ms = items[0].timestamp_ms
+        last_ms = start_ms
+
+        for item in items[1:]:
+            if item.action != current_action:
+                segments.append(
+                    ActionSegment(action=current_action, start_ms=start_ms, end_ms=last_ms)
+                )
+                current_action = item.action
+                start_ms = item.timestamp_ms
+            last_ms = item.timestamp_ms
+
+        segments.append(ActionSegment(action=current_action, start_ms=start_ms, end_ms=last_ms))
+        return segments

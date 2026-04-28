@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     frame_skip: int = 1
     history_size: int = 200
     ws_interval_ms: int = 250
+    demo_mode: bool = False
+    demo_interval_ms: int = 500
 
     class Config:
         env_file = ".env"
