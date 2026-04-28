@@ -16,9 +16,15 @@ Clean base for a scalable human action summary + fall detection system.
 3. Run API
    - uvicorn app.main:app --host 0.0.0.0 --port 8000
 
+## Demo Mode (No Camera)
+1. Enable demo mode in backend/.env
+   - DEMO_MODE=true
+2. Run API and connect from Flutter
+
 ## Streaming Endpoints
 - GET /api/status
 - GET /api/history?limit=100
+- GET /api/summary?window_ms=5000
 - WebSocket /api/ws
 
 ## Mobile
@@ -29,6 +35,8 @@ Clean base for a scalable human action summary + fall detection system.
 3. Update websocket URL
    - Edit mobile/lib/features/fall_detection/fall_detection_screen.dart
    - For Android emulator, use ws://10.0.2.2:8000/api/ws
+4. Generate models
+   - dart run build_runner build --delete-conflicting-outputs
 
 ## Next steps
 - Set RTSP_URL in backend/.env or switch CAMERA_SOURCE to webcam
