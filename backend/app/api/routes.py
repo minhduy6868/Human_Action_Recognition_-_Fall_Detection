@@ -1,22 +1,30 @@
 import asyncio
+import time
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.core.config import get_settings
-import time
 
 from app.models.schemas import (
+    ActivityInsightResponse,
     ActionSummaryRequest,
     ActionSummaryResponse,
     ActionTimelineResponse,
+    AlertEvent,
+    ChatQueryRequest,
+    ChatQueryResponse,
     HistoryResponse,
     RealtimeStatus,
+    ReportRequest,
+    SummaryReportResponse,
 )
 from app.services.inference_service import InferenceService
-from app.services.stream_service import state
+from app.services.chat_service import ChatService
+from app.services.stream_service import alert_engine, state
 
 router = APIRouter()
 service = InferenceService()
+chat_service = ChatService()
 settings = get_settings()
 
 
@@ -40,11 +48,37 @@ def history(limit: int = 100) -> HistoryResponse:
     return HistoryResponse(items=state.get_history(limit))
 
 
+@router.get("/alerts", response_model=list[AlertEvent])
+def alerts(limit: int = 100) -> list[AlertEvent]:
+    return state.get_alerts(limit)
+
+
+@router.get("/reports", response_model=list[SummaryReportResponse])
+def reports(limit: int = 20) -> list[SummaryReportResponse]:
+    return state.get_reports(limit)
+
+
 @router.get("/summary", response_model=ActionTimelineResponse)
 def summary(window_ms: int = 5000) -> ActionTimelineResponse:
     now_ms = int(time.time() * 1000)
     segments = state.summarize_actions(window_ms, now_ms)
     return ActionTimelineResponse(window_ms=window_ms, segments=segments)
+
+
+@router.get("/insights", response_model=ActivityInsightResponse)
+def insights(window_ms: int = 24 * 60 * 60 * 1000) -> ActivityInsightResponse:
+    now_ms = int(time.time() * 1000)
+    return ActivityInsightResponse(**state.activity_insight(window_ms=window_ms, now_ms=now_ms))
+
+
+@router.post("/chat/query", response_model=ChatQueryResponse)
+def chat_query(payload: ChatQueryRequest) -> ChatQueryResponse:
+    return chat_service.answer(payload.question, payload.window_ms)
+
+
+@router.post("/report/summary", response_model=SummaryReportResponse)
+def report_summary(payload: ReportRequest) -> SummaryReportResponse:
+    return alert_engine.generate_summary_report(payload.window_ms, persist=payload.persist)
 
 
 @router.websocket("/ws")
@@ -55,5 +89,45 @@ async def stream_ws(websocket: WebSocket) -> None:
             latest = state.get_latest()
             await websocket.send_json(latest.model_dump())
             await asyncio.sleep(settings.ws_interval_ms / 1000)
+    except WebSocketDisconnect:
+        return
+
+
+@router.websocket("/ws/fall-alerts")
+async def fall_alert_ws(websocket: WebSocket) -> None:
+    await websocket.accept()
+    last_event_id = 0
+    try:
+        while True:
+            events = state.get_fall_events_after(last_event_id)
+            for event in events:
+                await websocket.send_json(
+                    {
+                        "type": "fall_alert",
+                        "event": event.model_dump(),
+                    }
+                )
+                last_event_id = event.event_id
+            await asyncio.sleep(0.1)
+    except WebSocketDisconnect:
+        return
+
+
+@router.websocket("/ws/alerts")
+async def alert_ws(websocket: WebSocket) -> None:
+    await websocket.accept()
+    last_alert_id = 0
+    try:
+        while True:
+            alerts = state.get_alerts_after(last_alert_id)
+            for alert in alerts:
+                await websocket.send_json(
+                    {
+                        "type": alert.alert_type,
+                        "alert": alert.model_dump(),
+                    }
+                )
+                last_alert_id = alert.alert_id
+            await asyncio.sleep(0.1)
     except WebSocketDisconnect:
         return
