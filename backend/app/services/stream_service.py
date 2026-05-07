@@ -11,6 +11,7 @@ from app.core.config import get_settings
 from app.core.state import RealtimeState
 from app.models.schemas import RealtimeStatus
 from app.services.alert_engine import AlertEngine
+from app.services.event_reasoner import EventReasoner
 from app.pipelines.action_summary import classify_action
 from app.pipelines.action_smoothing import smooth_action
 from app.pipelines.action_model import ActionModel
@@ -43,6 +44,7 @@ class StreamService:
         self._action_history: dict[str, deque[tuple[str, float]]] = {}
         self._action_model: Optional[ActionModel] = None
         self._fall_model: Optional[FallModel] = None
+        self._event_reasoner = EventReasoner(state)
         self._action_input_size = settings.action_model_input_size
         self._frame_lock = threading.Lock()
         self._latest_frame: Optional[bytes] = None
@@ -246,6 +248,10 @@ class StreamService:
             if created_alerts:
                 alert_engine.publish_alerts(created_alerts)
             alert_engine.observe(status)
+
+            event_alerts = self._event_reasoner.observe(status)
+            if event_alerts:
+                alert_engine.publish_alerts(event_alerts)
 
             if settings.adaptive_frame_skip and settings.target_fps > 0:
                 elapsed_ms = (time.perf_counter() - loop_started) * 1000.0

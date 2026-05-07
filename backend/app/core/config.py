@@ -63,6 +63,22 @@ class Settings(BaseSettings):
     abnormal_dominant_action_ratio: float = 0.55
     abnormal_min_score: float = 0.65
     abnormal_suppression_ms: int = 5 * 60 * 1000
+    enable_event_reasoning: bool = True
+    event_check_interval_ms: int = 1000
+    loitering_window_ms: int = 2 * 60 * 1000
+    loitering_min_idle_ratio: float = 0.7
+    loitering_suppression_ms: int = 5 * 60 * 1000
+    suspicious_window_ms: int = 60 * 1000
+    suspicious_transition_threshold: int = 12
+    suspicious_suppression_ms: int = 2 * 60 * 1000
+    crowd_min_people: int = 5
+    crowd_min_duration_ms: int = 10 * 1000
+    crowd_suppression_ms: int = 2 * 60 * 1000
+    abandoned_object_stationary_ms: int = 60 * 1000
+    abandoned_object_move_ratio: float = 0.15
+    abandoned_person_distance_ratio: float = 2.5
+    abandoned_forget_ms: int = 5 * 60 * 1000
+    abandoned_suppression_ms: int = 5 * 60 * 1000
 
     class Config:
         env_file = ".env"
