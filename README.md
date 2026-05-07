@@ -36,13 +36,16 @@ If you have a real camera connected to this machine, use webcam mode first:
 
 If the webcam is not index 0, try 1, 2, or 3 until the camera opens.
 
-## YOLOv11 Object Detection
-The backend now runs YOLOv11 on each frame to detect people and other objects.
+## YOLOv11 Object Detection + Pose
+The backend runs YOLOv11 for object tracking and YOLOv11 Pose for keypoints.
 
 Default settings in `backend/.env`:
 - `YOLO_MODEL_PATH=yolo11n.pt`
+- `YOLO_POSE_MODEL_PATH=yolo11s-pose.pt`
 - `YOLO_CONFIDENCE=0.35`
+- `YOLO_POSE_CONFIDENCE=0.25`
 - `YOLO_IOU=0.5`
+- `YOLO_POSE_IOU=0.5`
 - `YOLO_IMGSZ=640`
 - `YOLO_MAX_DET=20`
 - `YOLO_TRACKER=bytetrack.yaml`
