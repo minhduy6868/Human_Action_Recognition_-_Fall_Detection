@@ -12,12 +12,14 @@ from app.core.state import RealtimeState
 from app.models.schemas import RealtimeStatus
 from app.services.alert_engine import AlertEngine
 from app.pipelines.action_summary import classify_action
+from app.pipelines.action_smoothing import smooth_action
 from app.pipelines.action_model import ActionModel
 from app.pipelines.fall_detection import FallDetector
 from app.pipelines.fall_model import FallModel, extract_fall_features
 from app.pipelines.object_detection import track_objects
 from app.pipelines.keypoints import extract_keypoints_from_bbox, flatten_landmarks
-from app.pipelines.pose_estimation import estimate_pose
+from app.pipelines.pose_estimation import estimate_pose, load_yolo_pose_model
+from app.utils.video import draw_detections
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -29,11 +31,23 @@ class StreamService:
     def __init__(self) -> None:
         self._thread: Optional[threading.Thread] = None
         self._running = False
-        self._fall_detector = FallDetector()
+        self._fall_detector = FallDetector(
+            drop_threshold=settings.fall_drop_threshold,
+            aspect_threshold=settings.fall_aspect_threshold,
+            velocity_threshold=settings.fall_velocity_threshold,
+            confirm_ms=settings.fall_confirm_ms,
+            candidate_window_ms=settings.fall_candidate_window_ms,
+        )
         self._prev_center: Optional[tuple[float, float]] = None
         self._sequence_buffers: dict[str, deque[list[float]]] = {}
+        self._action_history: dict[str, deque[tuple[str, float]]] = {}
         self._action_model: Optional[ActionModel] = None
         self._fall_model: Optional[FallModel] = None
+        self._action_input_size = settings.action_model_input_size
+        self._frame_lock = threading.Lock()
+        self._latest_frame: Optional[bytes] = None
+        self._latest_frame_ts_ms = 0
+        self._dynamic_skip = max(0, settings.frame_skip)
 
     def start(self) -> None:
         if self._running:
@@ -91,13 +105,6 @@ class StreamService:
             self._run_demo()
             return
 
-        try:
-            import mediapipe as mp
-        except ImportError:
-            logger.error("MediaPipe not installed")
-            self._running = False
-            return
-
         cap = self._open_capture()
         if cap is None or not cap.isOpened():
             logger.error("Failed to open video capture")
@@ -106,14 +113,16 @@ class StreamService:
 
         logger.info("Video capture opened successfully, starting pose estimation")
 
-        pose_model = mp.solutions.pose.Pose(
-            model_complexity=1,
-            min_detection_confidence=0.5,
-            min_tracking_confidence=0.5,
-        )
+        try:
+            pose_model = load_yolo_pose_model()
+        except RuntimeError:
+            logger.exception("YOLO Pose model failed to load")
+            self._running = False
+            return
 
         frame_index = 0
         while self._running:
+            loop_started = time.perf_counter()
             ret, frame = cap.read()
             if not ret:
                 if (
@@ -125,7 +134,8 @@ class StreamService:
                 break
 
             frame_index += 1
-            if settings.frame_skip > 0 and frame_index % (settings.frame_skip + 1) != 0:
+            skip = self._dynamic_skip if settings.adaptive_frame_skip else settings.frame_skip
+            if skip > 0 and frame_index % (skip + 1) != 0:
                 continue
 
             try:
@@ -156,7 +166,7 @@ class StreamService:
                 sequence = self._sequence_buffers.setdefault(
                     track_id, deque(maxlen=settings.action_window_frames)
                 )
-                sequence.append(flatten_landmarks(pose["landmarks"]))
+                sequence.append(self._fit_landmarks(flatten_landmarks(pose["landmarks"])))
 
                 if primary_pose is None:
                     primary_pose = pose
@@ -171,7 +181,9 @@ class StreamService:
                         primary_track_id,
                         deque(maxlen=settings.action_window_frames),
                     )
-                    sequence.append(flatten_landmarks(primary_pose["landmarks"]))
+                    sequence.append(
+                        self._fit_landmarks(flatten_landmarks(primary_pose["landmarks"]))
+                    )
                     primary_sequence = list(sequence)
 
             ts_ms = int(time.time() * 1000)
@@ -184,10 +196,22 @@ class StreamService:
                 and frame_index % settings.action_stride_frames == 0
             ):
                 if self._action_model is None:
-                    self._action_model = ActionModel.load(settings.action_model_path)
+                    self._action_model = ActionModel.load(
+                        settings.action_model_path,
+                        device=settings.model_device,
+                    )
+                    self._action_input_size = self._action_model.input_size
                 action, confidence = self._action_model.predict(primary_sequence)
             elif primary_pose is not None:
                 action, confidence = classify_action(primary_pose, self._prev_center)
+
+            if settings.action_smooth_window > 0:
+                history = self._action_history.setdefault(
+                    primary_track_id,
+                    deque(maxlen=settings.action_smooth_window),
+                )
+                history.append((action, confidence))
+                action, confidence = smooth_action(history, settings.action_min_confidence)
 
             if primary_pose and "center" in primary_pose:
                 self._prev_center = primary_pose["center"]
@@ -216,14 +240,33 @@ class StreamService:
                 objects=objects,
             )
 
+            self._update_latest_frame(frame, objects, action, fall, ts_ms)
+
             created_alerts = state.update(status)
             if created_alerts:
                 alert_engine.publish_alerts(created_alerts)
             alert_engine.observe(status)
 
+            if settings.adaptive_frame_skip and settings.target_fps > 0:
+                elapsed_ms = (time.perf_counter() - loop_started) * 1000.0
+                target_ms = 1000.0 / float(settings.target_fps)
+                if elapsed_ms > target_ms and self._dynamic_skip < settings.max_frame_skip:
+                    self._dynamic_skip += 1
+                elif elapsed_ms < target_ms * 0.7 and self._dynamic_skip > 0:
+                    self._dynamic_skip -= 1
+
         cap.release()
-        pose_model.close()
         self._running = False
+
+    def _fit_landmarks(self, flat: list[float]) -> list[float]:
+        target = self._action_input_size
+        if target <= 0:
+            return flat
+        if len(flat) > target:
+            return flat[:target]
+        if len(flat) < target:
+            return flat + [0.0] * (target - len(flat))
+        return flat
 
     def _run_demo(self) -> None:
         actions = ["standing", "walking", "sitting", "lying"]
@@ -247,6 +290,35 @@ class StreamService:
             alert_engine.observe(status)
             index += 1
             time.sleep(settings.demo_interval_ms / 1000)
+
+    def get_latest_frame(self) -> Optional[bytes]:
+        with self._frame_lock:
+            return self._latest_frame
+
+    def _update_latest_frame(
+        self,
+        frame,
+        objects,
+        action: str,
+        fall: bool,
+        ts_ms: int,
+    ) -> None:
+        if settings.mjpeg_fps <= 0:
+            return
+
+        min_interval_ms = int(1000 / settings.mjpeg_fps)
+        if ts_ms - self._latest_frame_ts_ms < min_interval_ms:
+            return
+
+        annotated = draw_detections(frame, objects, action, fall)
+        encode_params = [int(cv2.IMWRITE_JPEG_QUALITY), settings.mjpeg_quality]
+        ok, buffer = cv2.imencode(".jpg", annotated, encode_params)
+        if not ok:
+            return
+
+        with self._frame_lock:
+            self._latest_frame = buffer.tobytes()
+            self._latest_frame_ts_ms = ts_ms
 
 
 stream_service = StreamService()

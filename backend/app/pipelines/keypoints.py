@@ -6,6 +6,7 @@ from typing import Optional
 import cv2
 
 from app.core.config import get_settings
+from app.pipelines.pose_estimation import extract_pose_from_results
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -34,9 +35,12 @@ def extract_keypoints_from_bbox(
 
     roi = frame[y1_i:y2_i, x1_i:x2_i]
     rgb = cv2.cvtColor(roi, cv2.COLOR_BGR2RGB)
-    results = pose_model.process(rgb)
-    if not results.pose_landmarks:
-        return None
+    results = pose_model.predict(
+        source=rgb,
+        conf=settings.yolo_pose_confidence,
+        iou=settings.yolo_pose_iou,
+        verbose=False,
+    )
 
     vis_threshold = (
         visibility_threshold
@@ -44,39 +48,12 @@ def extract_keypoints_from_bbox(
         else settings.keypoint_visibility_threshold
     )
 
-    landmarks: list[tuple[float, float, float]] = []
-    xs: list[float] = []
-    ys: list[float] = []
-
-    for lm in results.pose_landmarks.landmark:
-        x_val = float(lm.x)
-        y_val = float(lm.y)
-        vis_val = float(lm.visibility)
-        landmarks.append((x_val, y_val, vis_val))
-        if vis_val >= vis_threshold:
-            xs.append(x_val)
-            ys.append(y_val)
-
-    if not xs or not ys:
+    pose = extract_pose_from_results(results, vis_threshold)
+    if not pose:
         return None
 
-    x_min, x_max = min(xs), max(xs)
-    y_min, y_max = min(ys), max(ys)
-    bbox_w = x_max - x_min
-    bbox_h = y_max - y_min
-    center_x = x_min + bbox_w / 2.0
-    center_y = y_min + bbox_h / 2.0
-    aspect_ratio = bbox_w / (bbox_h + 1e-6)
-
-    return {
-        "landmarks": landmarks,
-        "bbox": (x_min, y_min, x_max, y_max),
-        "bbox_w": bbox_w,
-        "bbox_h": bbox_h,
-        "center": (center_x, center_y),
-        "aspect_ratio": aspect_ratio,
-        "roi_bbox": (x1_i, y1_i, x2_i, y2_i),
-    }
+    pose["roi_bbox"] = (x1_i, y1_i, x2_i, y2_i)
+    return pose
 
 
 def flatten_landmarks(landmarks: list[tuple[float, float, float]]) -> list[float]:

@@ -3,11 +3,14 @@ import time
 
 import cv2
 
+from app.core.config import get_settings
 from app.pipelines.action_summary import classify_action
 from app.pipelines.fall_detection import FallDetector
 from app.pipelines.keypoints import extract_keypoints_from_bbox, flatten_landmarks
 from app.pipelines.object_detection import track_objects
-from app.pipelines.pose_estimation import estimate_pose
+from app.pipelines.pose_estimation import estimate_pose, load_yolo_pose_model
+
+settings = get_settings()
 
 
 def main() -> None:
@@ -17,21 +20,22 @@ def main() -> None:
     parser.add_argument("--every", type=int, default=10)
     args = parser.parse_args()
 
-    try:
-        import mediapipe as mp
-    except ImportError as exc:
-        raise RuntimeError("mediapipe is not installed") from exc
-
     cap = cv2.VideoCapture(args.input)
     if not cap.isOpened():
         raise RuntimeError(f"Failed to open video: {args.input}")
 
-    pose_model = mp.solutions.pose.Pose(
-        model_complexity=1,
-        min_detection_confidence=0.5,
-        min_tracking_confidence=0.5,
+    try:
+        pose_model = load_yolo_pose_model()
+    except RuntimeError as exc:
+        raise RuntimeError("ultralytics is not installed") from exc
+
+    fall_detector = FallDetector(
+        drop_threshold=settings.fall_drop_threshold,
+        aspect_threshold=settings.fall_aspect_threshold,
+        velocity_threshold=settings.fall_velocity_threshold,
+        confirm_ms=settings.fall_confirm_ms,
+        candidate_window_ms=settings.fall_candidate_window_ms,
     )
-    fall_detector = FallDetector()
     prev_center = None
 
     frame_index = 0
@@ -73,7 +77,6 @@ def main() -> None:
             )
 
     cap.release()
-    pose_model.close()
     elapsed = max(time.time() - start, 1e-6)
     fps = frame_index / elapsed
     print(f"done frames={frame_index} fps={fps:.2f}")

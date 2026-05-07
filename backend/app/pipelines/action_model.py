@@ -32,6 +32,7 @@ class ActionModel:
 
         model = _build_model(input_size, hidden_size, num_layers, len(labels))
         model.load_state_dict(checkpoint["state_dict"])
+        model.to(device)
         model.eval()
 
         return cls(
@@ -53,7 +54,7 @@ class ActionModel:
         if not sequence:
             return "unknown", 0.0
 
-        tensor = torch.tensor(sequence, dtype=torch.float32).unsqueeze(0)
+        tensor = torch.tensor(sequence, dtype=torch.float32).unsqueeze(0).to(self.device)
         with torch.no_grad():
             logits = self._model(tensor)
             probs = torch.softmax(logits, dim=-1).cpu().numpy()[0]
