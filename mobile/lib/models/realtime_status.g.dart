@@ -14,9 +14,11 @@ class _$RealtimeStatus extends RealtimeStatus {
   @override
   final bool fall;
   @override
-  final int timestampMs;
+  final double fall_confidence;
   @override
-  final String trackId;
+  final int timestamp_ms;
+  @override
+  final String track_id;
 
   factory _$RealtimeStatus([void Function(RealtimeStatusBuilder)? updates]) =>
       (RealtimeStatusBuilder()..update(updates))._build();
@@ -25,8 +27,9 @@ class _$RealtimeStatus extends RealtimeStatus {
       {required this.action,
       required this.confidence,
       required this.fall,
-      required this.timestampMs,
-      required this.trackId})
+      required this.fall_confidence,
+      required this.timestamp_ms,
+      required this.track_id})
       : super._();
   @override
   RealtimeStatus rebuild(void Function(RealtimeStatusBuilder) updates) =>
@@ -42,8 +45,9 @@ class _$RealtimeStatus extends RealtimeStatus {
         action == other.action &&
         confidence == other.confidence &&
         fall == other.fall &&
-        timestampMs == other.timestampMs &&
-        trackId == other.trackId;
+        fall_confidence == other.fall_confidence &&
+        timestamp_ms == other.timestamp_ms &&
+        track_id == other.track_id;
   }
 
   @override
@@ -52,8 +56,9 @@ class _$RealtimeStatus extends RealtimeStatus {
     _$hash = $jc(_$hash, action.hashCode);
     _$hash = $jc(_$hash, confidence.hashCode);
     _$hash = $jc(_$hash, fall.hashCode);
-    _$hash = $jc(_$hash, timestampMs.hashCode);
-    _$hash = $jc(_$hash, trackId.hashCode);
+    _$hash = $jc(_$hash, fall_confidence.hashCode);
+    _$hash = $jc(_$hash, timestamp_ms.hashCode);
+    _$hash = $jc(_$hash, track_id.hashCode);
     _$hash = $jf(_$hash);
     return _$hash;
   }
@@ -64,8 +69,9 @@ class _$RealtimeStatus extends RealtimeStatus {
           ..add('action', action)
           ..add('confidence', confidence)
           ..add('fall', fall)
-          ..add('timestampMs', timestampMs)
-          ..add('trackId', trackId))
+          ..add('fall_confidence', fall_confidence)
+          ..add('timestamp_ms', timestamp_ms)
+          ..add('track_id', track_id))
         .toString();
   }
 }
@@ -86,13 +92,18 @@ class RealtimeStatusBuilder
   bool? get fall => _$this._fall;
   set fall(bool? fall) => _$this._fall = fall;
 
-  int? _timestampMs;
-  int? get timestampMs => _$this._timestampMs;
-  set timestampMs(int? timestampMs) => _$this._timestampMs = timestampMs;
+  double? _fall_confidence;
+  double? get fall_confidence => _$this._fall_confidence;
+  set fall_confidence(double? fall_confidence) =>
+      _$this._fall_confidence = fall_confidence;
 
-  String? _trackId;
-  String? get trackId => _$this._trackId;
-  set trackId(String? trackId) => _$this._trackId = trackId;
+  int? _timestamp_ms;
+  int? get timestamp_ms => _$this._timestamp_ms;
+  set timestamp_ms(int? timestamp_ms) => _$this._timestamp_ms = timestamp_ms;
+
+  String? _track_id;
+  String? get track_id => _$this._track_id;
+  set track_id(String? track_id) => _$this._track_id = track_id;
 
   RealtimeStatusBuilder();
 
@@ -102,8 +113,9 @@ class RealtimeStatusBuilder
       _action = $v.action;
       _confidence = $v.confidence;
       _fall = $v.fall;
-      _timestampMs = $v.timestampMs;
-      _trackId = $v.trackId;
+      _fall_confidence = $v.fall_confidence;
+      _timestamp_ms = $v.timestamp_ms;
+      _track_id = $v.track_id;
       _$v = null;
     }
     return this;
@@ -131,10 +143,12 @@ class RealtimeStatusBuilder
               confidence, r'RealtimeStatus', 'confidence'),
           fall: BuiltValueNullFieldError.checkNotNull(
               fall, r'RealtimeStatus', 'fall'),
-          timestampMs: BuiltValueNullFieldError.checkNotNull(
-              timestampMs, r'RealtimeStatus', 'timestampMs'),
-          trackId: BuiltValueNullFieldError.checkNotNull(
-              trackId, r'RealtimeStatus', 'trackId'),
+          fall_confidence: BuiltValueNullFieldError.checkNotNull(
+              fall_confidence, r'RealtimeStatus', 'fall_confidence'),
+          timestamp_ms: BuiltValueNullFieldError.checkNotNull(
+              timestamp_ms, r'RealtimeStatus', 'timestamp_ms'),
+          track_id: BuiltValueNullFieldError.checkNotNull(
+              track_id, r'RealtimeStatus', 'track_id'),
         );
     replace(_$result);
     return _$result;

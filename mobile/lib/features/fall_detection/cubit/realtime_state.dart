@@ -25,7 +25,7 @@ class RealtimeState {
 
   static RealtimeState initial() {
     return RealtimeState(
-      status: RealtimeStatus.fromMap(const {}),
+      status: RealtimeStatus.initial(),
       isConnected: false,
       error: null,
     );

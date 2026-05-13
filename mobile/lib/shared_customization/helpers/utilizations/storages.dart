@@ -27,4 +27,24 @@ class CustomSharedPreferences {
     await prefs.remove('access_token');
     await prefs.remove('refresh_token');
   }
+
+  Future<void> setThemeMode(ThemeMode mode) async {
+    await prefs.setString('theme_mode', mode.toString());
+  }
+
+  Future<ThemeMode> getThemeMode() async {
+    final mode = prefs.getString('theme_mode');
+    return mode == null
+        ? ThemeMode.system
+        : ThemeMode.values
+            .firstWhere((e) => e.toString() == mode, orElse: () => ThemeMode.system);
+  }
+
+  Future<void> setLanguageCode(String code) async {
+    await prefs.setString('language_code', code);
+  }
+
+  Future<String> getLanguageCode() async {
+    return prefs.getString('language_code') ?? 'en';
+  }
 }
