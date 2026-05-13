@@ -92,9 +92,12 @@ class StreamService:
             if not cap.isOpened():
                 logger.error(f"Failed to open video file: {settings.video_file_path}")
             return cap
-        if source == "rtsp" and settings.rtsp_url:
-            logger.info(f"Opening RTSP stream: {settings.rtsp_url}")
-            cap = cv2.VideoCapture(settings.rtsp_url)
+        if source in {"rtsp", "http", "http_mjpeg", "mjpeg"} and settings.rtsp_url:
+            logger.info(f"Opening camera stream: {settings.rtsp_url}")
+            if platform.system() == "Windows":
+                cap = cv2.VideoCapture(settings.rtsp_url, cv2.CAP_FFMPEG)
+            else:
+                cap = cv2.VideoCapture(settings.rtsp_url)
             if cap.isOpened():
                 cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
             return cap

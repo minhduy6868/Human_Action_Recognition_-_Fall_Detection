@@ -36,6 +36,15 @@ class DetectedObject(BaseModel):
     track_id: str = ""
 
 
+class CameraInfo(BaseModel):
+    index: int
+
+
+class CameraListResponse(BaseModel):
+    active_index: int
+    items: list[CameraInfo]
+
+
 class ActionSummaryRequest(BaseModel):
     track_id: str
     window_ms: int

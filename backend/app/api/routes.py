@@ -2,6 +2,7 @@ import asyncio
 import time
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi.responses import StreamingResponse
 
 from app.core.config import get_settings
 
@@ -11,6 +12,7 @@ from app.models.schemas import (
     ActionSummaryResponse,
     ActionTimelineResponse,
     AlertEvent,
+    CameraListResponse,
     ChatQueryRequest,
     ChatQueryResponse,
     HistoryResponse,
@@ -20,7 +22,8 @@ from app.models.schemas import (
 )
 from app.services.inference_service import InferenceService
 from app.services.chat_service import ChatService
-from app.services.stream_service import alert_engine, state
+from app.services.stream_service import alert_engine, state, stream_service
+from app.utils.video import list_webcams
 
 router = APIRouter()
 service = InferenceService()
@@ -58,6 +61,15 @@ def reports(limit: int = 20) -> list[SummaryReportResponse]:
     return state.get_reports(limit)
 
 
+@router.get("/cameras", response_model=CameraListResponse)
+def cameras() -> CameraListResponse:
+    if settings.camera_source.lower() != "webcam":
+        return CameraListResponse(active_index=settings.webcam_index, items=[])
+
+    items = list_webcams(settings.webcam_scan_max)
+    return CameraListResponse(active_index=settings.webcam_index, items=items)
+
+
 @router.get("/summary", response_model=ActionTimelineResponse)
 def summary(window_ms: int = 5000) -> ActionTimelineResponse:
     now_ms = int(time.time() * 1000)
@@ -79,6 +91,26 @@ def chat_query(payload: ChatQueryRequest) -> ChatQueryResponse:
 @router.post("/report/summary", response_model=SummaryReportResponse)
 def report_summary(payload: ReportRequest) -> SummaryReportResponse:
     return alert_engine.generate_summary_report(payload.window_ms, persist=payload.persist)
+
+
+@router.get("/stream/mjpeg")
+def mjpeg_stream() -> StreamingResponse:
+    boundary = "frame"
+
+    def generate():
+        while True:
+            frame = stream_service.get_latest_frame()
+            if frame:
+                yield (
+                    f"--{boundary}\r\n"
+                    "Content-Type: image/jpeg\r\n\r\n"
+                ).encode("utf-8") + frame + b"\r\n"
+            time.sleep(max(1.0 / max(settings.mjpeg_fps, 1), 0.05))
+
+    return StreamingResponse(
+        generate(),
+        media_type=f"multipart/x-mixed-replace; boundary={boundary}",
+    )
 
 
 @router.websocket("/ws")
