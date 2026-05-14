@@ -18,21 +18,43 @@ class FallModel:
     def load(cls, model_path: str) -> "FallModel":
         try:
             import xgboost as xgb
-        except ImportError as exc:  # pragma: no cover - runtime dependency
-            raise RuntimeError("xgboost is not installed") from exc
+        except ImportError:  # pragma: no cover - runtime dependency
+            logger.warning(
+                "xgboost not available: fall model will be disabled and predictions return 0.0"
+            )
+            return cls(model_path=model_path, _model=None)
 
         model = xgb.Booster()
-        model.load_model(model_path)
+        try:
+            model.load_model(model_path)
+        except Exception as exc:  # pragma: no cover - defensive: corrupted/missing file
+            logger.exception("Failed to load xgboost model '%s': %s", model_path, exc)
+            return cls(model_path=model_path, _model=None)
+
         return cls(model_path=model_path, _model=model)
 
     def predict(self, features: list[float]) -> float:
         try:
             import xgboost as xgb
         except ImportError as exc:  # pragma: no cover - runtime dependency
-            raise RuntimeError("xgboost is not installed") from exc
+            # If xgboost is missing at predict time, return no-fall score.
+            logger.debug("xgboost not installed at predict time; returning 0.0")
+            return 0.0
 
-        data = xgb.DMatrix(np.array([features], dtype=np.float32))
-        score = float(self._model.predict(data)[0])
+        if self._model is None:
+            logger.debug("No fall model loaded (None); returning 0.0")
+            return 0.0
+
+        arr = np.asarray(features, dtype=np.float32)
+        if arr.ndim != 1:
+            arr = arr.flatten()
+
+        data = xgb.DMatrix(np.array([arr], dtype=np.float32))
+        try:
+            score = float(self._model.predict(data)[0])
+        except Exception:
+            logger.exception("Error during fall model prediction; returning 0.0")
+            score = 0.0
         return score
 
 
