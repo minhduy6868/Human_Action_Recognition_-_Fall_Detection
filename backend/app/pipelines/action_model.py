@@ -21,19 +21,53 @@ class ActionModel:
     def load(cls, model_path: str, device: str = "cpu") -> "ActionModel":
         try:
             import torch
-        except ImportError as exc:  # pragma: no cover - runtime dependency
-            raise RuntimeError("torch is not installed") from exc
+        except ImportError:
+            logger.warning("torch not available: action model disabled (will use fallback)")
+            return cls(
+                model_path=model_path,
+                labels=["standing", "walking", "sitting", "lying"],
+                input_size=0,
+                hidden_size=0,
+                num_layers=0,
+                device=device,
+                _model=None,
+            )
 
-        checkpoint = torch.load(model_path, map_location=device)
+        try:
+            checkpoint = torch.load(model_path, map_location=device)
+        except Exception as exc:
+            logger.exception("Failed to load action model checkpoint '%s': %s", model_path, exc)
+            return cls(
+                model_path=model_path,
+                labels=["standing", "walking", "sitting", "lying"],
+                input_size=0,
+                hidden_size=0,
+                num_layers=0,
+                device=device,
+                _model=None,
+            )
+
         labels = checkpoint.get("labels", ["standing", "walking", "sitting", "lying"])
         input_size = int(checkpoint.get("input_size", 99))
         hidden_size = int(checkpoint.get("hidden_size", 128))
         num_layers = int(checkpoint.get("num_layers", 2))
 
-        model = _build_model(input_size, hidden_size, num_layers, len(labels))
-        model.load_state_dict(checkpoint["state_dict"])
-        model.to(device)
-        model.eval()
+        try:
+            model = _build_model(input_size, hidden_size, num_layers, len(labels))
+            model.load_state_dict(checkpoint["state_dict"])
+            model.to(device)
+            model.eval()
+        except Exception as exc:
+            logger.exception("Failed to build/load action model network: %s", exc)
+            return cls(
+                model_path=model_path,
+                labels=labels,
+                input_size=input_size,
+                hidden_size=hidden_size,
+                num_layers=num_layers,
+                device=device,
+                _model=None,
+            )
 
         return cls(
             model_path=model_path,
@@ -46,18 +80,36 @@ class ActionModel:
         )
 
     def predict(self, sequence: list[list[float]]) -> tuple[str, float]:
-        try:
-            import torch
-        except ImportError as exc:  # pragma: no cover - runtime dependency
-            raise RuntimeError("torch is not installed") from exc
-
         if not sequence:
             return "unknown", 0.0
 
-        tensor = torch.tensor(sequence, dtype=torch.float32).unsqueeze(0).to(self.device)
-        with torch.no_grad():
-            logits = self._model(tensor)
-            probs = torch.softmax(logits, dim=-1).cpu().numpy()[0]
+        if self._model is None:
+            logger.debug("ActionModel._model is None; returning unknown")
+            return "unknown", 0.0
+
+        # validate input size (if known)
+        if self.input_size and len(sequence[0]) != self.input_size:
+            logger.warning(
+                "Sequence feature size (%d) != model input_size (%d); returning unknown",
+                len(sequence[0]),
+                self.input_size,
+            )
+            return "unknown", 0.0
+
+        try:
+            import torch
+        except ImportError:
+            logger.debug("torch not available at predict time; returning unknown")
+            return "unknown", 0.0
+
+        try:
+            tensor = torch.tensor(sequence, dtype=torch.float32).unsqueeze(0).to(self.device)
+            with torch.no_grad():
+                logits = self._model(tensor)
+                probs = torch.softmax(logits, dim=-1).cpu().numpy()[0]
+        except Exception:
+            logger.exception("Error during ActionModel.predict")
+            return "unknown", 0.0
 
         best_idx = int(probs.argmax())
         label = self.labels[best_idx] if best_idx < len(self.labels) else "unknown"
