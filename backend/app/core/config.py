@@ -1,6 +1,7 @@
+import os
 from functools import lru_cache
 
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -13,26 +14,32 @@ class Settings(BaseSettings):
     video_file_path: str = ""
     loop_video_file: bool = False
     enable_stream: bool = True
-    frame_skip: int = 1
+    frame_skip: int = 0
     adaptive_frame_skip: bool = True
-    target_fps: int = 15
-    max_frame_skip: int = 4
+    target_fps: int = 20
+    max_frame_skip: int = 3
     history_size: int = 10000
     ws_interval_ms: int = 250
     demo_mode: bool = False
     demo_interval_ms: int = 500
     yolo_model_path: str = "yolo11n.pt"
     yolo_pose_model_path: str = "yolo11s-pose.pt"
-    yolo_confidence: float = 0.35
+    yolo_confidence: float = 0.3
     yolo_pose_confidence: float = 0.25
-    yolo_iou: float = 0.5
+    yolo_iou: float = 0.45
     yolo_pose_iou: float = 0.5
     yolo_imgsz: int = 640
-    yolo_max_det: int = 20
+    yolo_max_det: int = 30
     yolo_classes: str = ""
-    yolo_tracker: str = "bytetrack.yaml"
-    mjpeg_fps: int = 10
-    mjpeg_quality: int = 80
+    yolo_tracker: str = "botsort.yaml"
+    clothing_cache_frames: int = 30
+    fall_rule_consecutive_frames: int = 3
+    # Controls PersonIdentifier feature (kept for backward compatibility, was person_gallery_enabled)
+    person_gallery_enabled: bool = True
+    pose_full_frame_match: bool = True
+    pose_match_min_iou: float = 0.15
+    mjpeg_fps: int = 15
+    mjpeg_quality: int = 75
     webcam_scan_max: int = 5
     use_ml_action: bool = False
     use_ml_fall: bool = False
@@ -80,8 +87,41 @@ class Settings(BaseSettings):
     abandoned_forget_ms: int = 5 * 60 * 1000
     abandoned_suppression_ms: int = 5 * 60 * 1000
 
-    class Config:
-        env_file = ".env"
+    model_config = SettingsConfigDict(
+        env_file=os.path.join(os.path.dirname(__file__), "../../.env"),
+        env_file_encoding="utf-8",
+        # Allow fields like model_device without clashing with Pydantic's model_* namespace
+        protected_namespaces=("settings_",),
+    )
+
+    def ultralytics_device(self) -> str | int:
+        """Resolve MODEL_DEVICE to a device usable by Ultralytics / torch.
+
+        Falls back to CPU automatically when CUDA is requested but the
+        installed PyTorch build has no CUDA support (e.g. CPU-only wheels).
+        """
+        import logging
+        raw = self.model_device.strip().lower()
+        if raw in ("cpu", "none", ""):
+            return "cpu"
+
+        # Any non-cpu value → check CUDA availability first
+        try:
+            import torch
+            if not torch.cuda.is_available():
+                logging.getLogger(__name__).warning(
+                    "MODEL_DEVICE=%r requested but torch.cuda.is_available()=False "
+                    "(PyTorch installed without CUDA support). Falling back to CPU. "
+                    "Re-install PyTorch with CUDA: https://pytorch.org/get-started/locally/",
+                    self.model_device,
+                )
+                return "cpu"
+        except ImportError:
+            return "cpu"
+
+        if raw in ("cuda", "gpu"):
+            return 0
+        return self.model_device.strip()
 
 
 @lru_cache()
