@@ -52,6 +52,12 @@ class _FallDetectionScreenState extends State<FallDetectionScreen> {
                     timestamp: DateTime.fromMillisecondsSinceEpoch(status.timestampMs),
                   ),
 
+                  // People List (NEW)
+                  PeopleListWidget(people: status.people),
+
+                  // Objects List (NEW)
+                  ObjectsListWidget(objects: status.objects),
+
                   // Alert Section (if falling)
                   if (status.fall) _buildFallAlert(),
                 ],

@@ -14,16 +14,44 @@ class StatusCard extends StatelessWidget {
     required this.fallConfidence,
   });
 
+  static double _clamp01(double v) {
+    if (v.isNaN || v.isInfinite) return 0;
+    return v.clamp(0.0, 1.0);
+  }
+
+  static String _actionLabel(String raw) {
+    switch (raw.toLowerCase()) {
+      case 'standing':
+        return 'STANDING';
+      case 'walking':
+        return 'WALKING';
+      case 'running':
+        return 'RUNNING';
+      case 'sitting':
+        return 'SITTING';
+      case 'lying':
+        return 'LYING';
+      case 'crouching':
+        return 'CROUCHING';
+      default:
+        return 'UNKNOWN';
+    }
+  }
+
   Color get actionColor {
     switch (action.toLowerCase()) {
       case 'standing':
         return Colors.blue;
       case 'walking':
         return Colors.cyan;
+      case 'running':
+        return Colors.deepPurple;
       case 'sitting':
         return Colors.orange;
       case 'lying':
         return Colors.purple;
+      case 'crouching':
+        return Colors.teal;
       default:
         return Colors.grey;
     }
@@ -35,10 +63,14 @@ class StatusCard extends StatelessWidget {
         return Icons.person;
       case 'walking':
         return Icons.directions_walk;
+      case 'running':
+        return Icons.directions_run;
       case 'sitting':
         return Icons.chair;
       case 'lying':
         return Icons.hotel;
+      case 'crouching':
+        return Icons.accessibility_new;
       default:
         return Icons.help;
     }
@@ -46,6 +78,8 @@ class StatusCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final conf01 = _clamp01(confidence);
+    final fall01 = _clamp01(fallConfidence);
     return Card(
       elevation: 8,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -81,7 +115,7 @@ class StatusCard extends StatelessWidget {
 
             // Action Name
             Text(
-              action.toUpperCase(),
+              _actionLabel(action),
               style: const TextStyle(
                 fontSize: 28,
                 fontWeight: FontWeight.bold,
@@ -105,7 +139,7 @@ class StatusCard extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      '${(confidence * 100).toStringAsFixed(1)}%',
+                      '${(conf01 * 100).toStringAsFixed(1)}%',
                       style: const TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.bold,
@@ -118,7 +152,7 @@ class StatusCard extends StatelessWidget {
                 ClipRRect(
                   borderRadius: BorderRadius.circular(8),
                   child: LinearProgressIndicator(
-                    value: confidence,
+                    value: conf01,
                     minHeight: 8,
                     backgroundColor: Colors.white.withOpacity(0.2),
                     valueColor: AlwaysStoppedAnimation<Color>(
@@ -158,7 +192,7 @@ class StatusCard extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                'Confidence: ${(fallConfidence * 100).toStringAsFixed(1)}%',
+                'Confidence: ${(fall01 * 100).toStringAsFixed(1)}%',
                 style: TextStyle(
                   fontSize: 12,
                   color: Colors.white.withOpacity(0.7),
