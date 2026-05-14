@@ -17,6 +17,8 @@ class FallDetector:
 
     def update(self, pose: Optional[dict], action: str, ts_ms: int) -> tuple[bool, float]:
         if pose is None:
+            self._prev_center_y = None
+            self._prev_ts_ms = None
             self._candidate_since_ms = None
             self._lying_since_ms = None
             return False, 0.0
@@ -35,7 +37,8 @@ class FallDetector:
         self._prev_center_y = center_y
         self._prev_ts_ms = ts_ms
 
-        if action == "lying" and aspect_ratio > self.aspect_threshold:
+        is_lying = action == "lying" or aspect_ratio > self.aspect_threshold
+        if is_lying:
             if self._lying_since_ms is None:
                 self._lying_since_ms = ts_ms
         else:
@@ -51,5 +54,11 @@ class FallDetector:
         if self._candidate_since_ms is not None and self._lying_since_ms is not None:
             if ts_ms - self._lying_since_ms >= self.confirm_ms:
                 return True, 0.9
+
+        # Fallback: long, wide lying without a clear drop (more sensitive).
+        if self._candidate_since_ms is None and self._lying_since_ms is not None:
+            if ts_ms - self._lying_since_ms >= self.confirm_ms:
+                if aspect_ratio >= self.aspect_threshold * 1.25:
+                    return True, 0.6
 
         return False, 0.0
