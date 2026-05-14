@@ -1,5 +1,43 @@
+import 'package:flutter/foundation.dart';
+
 class AppConfig {
-  // Use localhost with adb reverse TCP forwarding
-  static const String apiBaseUrl = 'http://localhost:8000/api';
-  static const String wsUrl = 'ws://localhost:8000/api/ws';
+  static String get _backendHost {
+    const backendHost = String.fromEnvironment('BACKEND_HOST');
+    if (backendHost.isNotEmpty) {
+      return backendHost;
+    }
+
+    if (kIsWeb) {
+      return '127.0.0.1:8000';
+    }
+
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.android:
+        return '192.168.1.187:8000'; // Correct PC IP
+      case TargetPlatform.iOS:
+        return '127.0.0.1:8000';
+      default:
+        return '127.0.0.1:8000';
+    }
+  }
+
+  static String get apiBaseUrl => String.fromEnvironment(
+        'API_BASE_URL',
+        defaultValue: 'http://$_backendHost/api',
+      );
+
+  static String get wsUrl => String.fromEnvironment(
+        'WS_URL',
+        defaultValue: 'ws://$_backendHost/api/ws',
+      );
+
+  static String get camerasUrl => String.fromEnvironment(
+        'CAMERAS_URL',
+        defaultValue: 'http://$_backendHost/api/cameras',
+      );
+
+  static String get mjpegUrl => String.fromEnvironment(
+        'MJPEG_URL',
+        defaultValue: 'http://$_backendHost/api/stream/mjpeg',
+      );
 }
