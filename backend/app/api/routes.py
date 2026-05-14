@@ -16,6 +16,7 @@ from app.models.schemas import (
     ChatQueryRequest,
     ChatQueryResponse,
     HistoryResponse,
+    PersonAction,
     RealtimeStatus,
     ReportRequest,
     SummaryReportResponse,
@@ -44,6 +45,39 @@ def action_summary(payload: ActionSummaryRequest) -> ActionSummaryResponse:
 @router.get("/status", response_model=RealtimeStatus)
 def status() -> RealtimeStatus:
     return state.get_latest()
+
+
+@router.get("/people", response_model=list[PersonAction])
+def get_people() -> list[PersonAction]:
+    """✅ NEW: Trả về danh sách tất cả người được phát hiện hiện tại"""
+    latest = state.get_latest()
+    return latest.people
+
+
+@router.get("/people/{track_id}", response_model=PersonAction | None)
+def get_person(track_id: str) -> PersonAction | None:
+    """✅ NEW: Trả về thông tin chi tiết 1 người cụ thể"""
+    latest = state.get_latest()
+    for person in latest.people:
+        if person.track_id == track_id:
+            return person
+    return None
+
+
+@router.get("/objects", response_model=list)
+def get_objects():
+    """✅ NEW: Trả về danh sách tất cả đối tượng (người + vật khác)"""
+    latest = state.get_latest()
+    return [
+        {
+            "class_id": obj.class_id,
+            "label": obj.label,
+            "confidence": obj.confidence,
+            "bbox": {"x1": obj.x1, "y1": obj.y1, "x2": obj.x2, "y2": obj.y2},
+            "track_id": obj.track_id,
+        }
+        for obj in latest.objects
+    ]
 
 
 @router.get("/history", response_model=HistoryResponse)

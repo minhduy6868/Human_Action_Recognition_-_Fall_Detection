@@ -7,6 +7,7 @@ from app.models.schemas import (
     RealtimeStatus,
     SummaryReportResponse,
 )
+from app.utils.action_analytics import durations_by_action
 
 
 class RealtimeState:
@@ -155,7 +156,7 @@ class RealtimeState:
             ]
 
         segments = self.summarize_actions(window_ms=window_ms, now_ms=now_ms)
-        durations = self._durations_by_action(items)
+        durations = durations_by_action(items)
         total_duration = sum(durations.values())
 
         dominant_action = "unknown"
@@ -174,28 +175,3 @@ class RealtimeState:
             "fall_detected": len(falls) > 0,
             "fall_events": falls,
         }
-
-    @staticmethod
-    def _durations_by_action(items: list[RealtimeStatus]) -> dict[str, int]:
-        if not items:
-            return {}
-
-        durations: dict[str, int] = {}
-        if len(items) == 1:
-            durations[items[0].action] = 1
-            return durations
-
-        diffs = [
-            max(items[i + 1].timestamp_ms - items[i].timestamp_ms, 1)
-            for i in range(len(items) - 1)
-        ]
-        median_diff = sorted(diffs)[len(diffs) // 2]
-
-        for idx, item in enumerate(items):
-            if idx < len(items) - 1:
-                delta = max(items[idx + 1].timestamp_ms - item.timestamp_ms, 1)
-            else:
-                delta = max(median_diff, 1)
-            durations[item.action] = durations.get(item.action, 0) + delta
-
-        return durations

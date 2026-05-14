@@ -6,6 +6,7 @@ from typing import Optional
 from app.core.config import get_settings
 from app.core.state import RealtimeState
 from app.models.schemas import AlertEvent, DetectedObject, RealtimeStatus
+from app.utils.action_analytics import durations_by_action_with_total
 
 settings = get_settings()
 
@@ -85,7 +86,7 @@ class EventReasoner:
             return []
 
         items = self._history_for_track(track_id, settings.loitering_window_ms, status.timestamp_ms)
-        total_ms, durations = self._durations_by_action(items)
+        total_ms, durations = durations_by_action_with_total(items)
         if total_ms < settings.loitering_window_ms:
             return []
 
@@ -129,7 +130,7 @@ class EventReasoner:
             return []
 
         items = self._history_for_track(track_id, settings.suspicious_window_ms, status.timestamp_ms)
-        total_ms, _ = self._durations_by_action(items)
+        total_ms, _ = durations_by_action_with_total(items)
         if total_ms < settings.suspicious_window_ms:
             return []
 
@@ -256,31 +257,6 @@ class EventReasoner:
             for item in items
             if item.track_id == track_id and item.timestamp_ms >= now_ms - window_ms
         ]
-
-    @staticmethod
-    def _durations_by_action(items: list[RealtimeStatus]) -> tuple[int, dict[str, int]]:
-        if not items:
-            return 0, {}
-
-        durations: dict[str, int] = {}
-        if len(items) == 1:
-            durations[items[0].action] = 1
-            return 1, durations
-
-        diffs = [
-            max(items[i + 1].timestamp_ms - items[i].timestamp_ms, 1)
-            for i in range(len(items) - 1)
-        ]
-        median_diff = sorted(diffs)[len(diffs) // 2]
-
-        for idx, item in enumerate(items):
-            if idx < len(items) - 1:
-                delta = max(items[idx + 1].timestamp_ms - item.timestamp_ms, 1)
-            else:
-                delta = max(median_diff, 1)
-            durations[item.action] = durations.get(item.action, 0) + delta
-
-        return sum(durations.values()), durations
 
     @staticmethod
     def _count_transitions(items: list[RealtimeStatus]) -> int:
