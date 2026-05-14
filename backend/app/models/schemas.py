@@ -25,6 +25,12 @@ class AlertEvent(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class PersonClothing(BaseModel):
+    """Clothing color information."""
+    upper: str = "unknown"  # e.g., "red", "blue", "black"
+    lower: str = "unknown"  # e.g., "blue", "white", "black"
+
+
 class DetectedObject(BaseModel):
     class_id: int
     label: str
@@ -34,6 +40,8 @@ class DetectedObject(BaseModel):
     x2: float
     y2: float
     track_id: str = ""
+    clothing: PersonClothing = PersonClothing()  # NEW: Clothing colors for persons
+    is_person: bool = False  # True if this is a person
 
 
 class CameraInfo(BaseModel):
@@ -63,14 +71,30 @@ class ActionSegment(BaseModel):
     end_ms: int
 
 
+class PersonAction(BaseModel):
+    """Hành động của 1 người"""
+    track_id: str
+    action: str
+    confidence: float
+    fall: bool
+    fall_confidence: float
+    bbox_x1: float = 0.0
+    bbox_y1: float = 0.0
+    bbox_x2: float = 0.0
+    bbox_y2: float = 0.0
+    clothing: PersonClothing = PersonClothing()  # Màu áo quần
+    person_id: str = ""  # ID nhận diện người (dựa trên visual features)
+
+
 class RealtimeStatus(BaseModel):
-    action: str = "idle"
+    action: str = "idle"  # ← Hành động của người chính (tương thích cũ)
     confidence: float = 0.0
     fall: bool = False
     fall_confidence: float = 0.0
     timestamp_ms: int = 0
-    track_id: str = "0"
-    objects: list[DetectedObject] = Field(default_factory=list)
+    track_id: str = "0"  # ← Track ID người chính
+    objects: list[DetectedObject] = Field(default_factory=list)  # ← TẤT CẢ đối tượng (người + vật khác)
+    people: list[PersonAction] = Field(default_factory=list)  # ← NEW: Danh sách tất cả người với hành động
 
 
 class HistoryResponse(BaseModel):
