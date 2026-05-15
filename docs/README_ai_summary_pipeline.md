@@ -297,7 +297,7 @@ API summary phải theo RESTful style, auth bằng Bearer token.
 ### 8.3 Summary theo câu hỏi
 
 ```http
-POST /api/chat/query
+POST /api/v1/chat/query
 ```
 
 Payload:
@@ -324,7 +324,7 @@ Response:
 ### 8.4 Summary theo ngày
 
 ```http
-POST /api/report/summary
+POST /api/v1/report/summary
 ```
 
 Payload:

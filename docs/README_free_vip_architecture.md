@@ -116,6 +116,7 @@ Chức năng:
 Giới hạn đề xuất:
 
 - `max_active_sources = 1`
+- `max_sources = 1` (tổng số nguồn được tạo/lưu)
 - `daily_ai_queries = 10` hoặc `20`
 - `history_window = 24h`
 - `summary_window = 24h`.
@@ -134,6 +135,7 @@ Chức năng:
 Giới hạn đề xuất:
 
 - `max_active_sources >= 5` hoặc không giới hạn có kiểm soát.
+- `max_sources >= 5` hoặc không giới hạn có kiểm soát.
 - `daily_ai_queries = unlimited` nhưng vẫn rate-limit kỹ thuật.
 - `history_window = 30d`, `90d`, hoặc cấu hình theo plan.
 
@@ -208,12 +210,14 @@ Gói thường:
 
 - Chỉ 1 nguồn active.
 - Khi thêm nguồn mới thì phải replace nguồn hiện tại.
-- Có thể giữ danh sách lịch sử nguồn đã dùng nhưng chỉ 1 nguồn chạy.
+- Không cho tạo/lưu quá 1 nguồn (max_sources = 1).
+- Có thể đổi nguồn nhưng luôn chỉ có 1 nguồn active.
 
 Gói VIP:
 
 - Nhiều nguồn được lưu.
 - Có thể chạy đa camera nếu hạ tầng đủ.
+- Cho phép nhiều nguồn active cùng lúc (theo giới hạn gói).
 - Có thể schedule summary theo nguồn hoặc tổng hợp liên nguồn.
 
 ### 6.3 API đề xuất
@@ -309,7 +313,7 @@ API phải theo RESTful convention để code sau này sạch và dễ test.
 
 ### 8.1 Quy ước chung
 
-- Dùng danh từ số nhiều cho resource: `/api/sources`, `/api/summaries`, `/api/alerts`.
+- Dùng danh từ số nhiều cho resource: `/api/v1/sources`, `/api/v1/summaries`, `/api/v1/alerts`.
 - Dùng HTTP method đúng nghĩa.
 - Không dùng verb trong path nếu đã có method phù hợp.
 - Response phải có schema ổn định.
@@ -318,33 +322,47 @@ API phải theo RESTful convention để code sau này sạch và dễ test.
 ### 8.2 Auth endpoints
 
 ```http
-POST /api/auth/login
-POST /api/auth/refresh
-POST /api/auth/logout
-GET  /api/auth/me
+POST /api/v1/auth/login
+POST /api/v1/auth/refresh
+POST /api/v1/auth/logout
+GET  /api/v1/auth/me
 ```
 
 ### 8.3 Resource endpoints
 
 ```http
-GET    /api/sources
-POST   /api/sources
-GET    /api/sources/{source_id}
-PATCH  /api/sources/{source_id}
-DELETE /api/sources/{source_id}
+GET    /api/v1/sources
+POST   /api/v1/sources
+GET    /api/v1/sources/{source_id}
+PATCH  /api/v1/sources/{source_id}
+DELETE /api/v1/sources/{source_id}
+POST   /api/v1/sources/{source_id}/activate
 
-GET    /api/history
-GET    /api/status
-GET    /api/alerts
-GET    /api/reports
+GET    /api/v1/history
+GET    /api/v1/status
+GET    /api/v1/people
+GET    /api/v1/people/{track_id}
+GET    /api/v1/objects
+GET    /api/v1/alerts
+GET    /api/v1/alerts/after
+GET    /api/v1/fall-events
+GET    /api/v1/fall-events/after
+GET    /api/v1/reports
+
+POST   /api/v1/streams/start
+POST   /api/v1/streams/stop
+GET    /api/v1/streams
+GET    /api/v1/streams/{source_id}/status
+GET    /api/v1/stream/mjpeg
+GET    /api/v1/streams/{source_id}/mjpeg
 ```
 
 ### 8.4 AI endpoints
 
 ```http
-POST /api/chat/query
-POST /api/summary/query
-POST /api/report/summary
+POST /api/v1/chat/query
+POST /api/v1/summary/query
+POST /api/v1/report/summary
 ```
 
 ### 8.5 REST response mẫu
@@ -368,7 +386,12 @@ POST /api/report/summary
 {
   "error": {
     "code": "PLAN_LIMIT_REACHED",
-    "message": "AI query limit reached for current plan"
+    "message": "AI query limit reached for current plan",
+    "upgrade_required": true
+  },
+  "meta": {
+    "request_id": "req_123",
+    "timestamp": "2026-05-14T12:00:00Z"
   }
 }
 ```
@@ -383,19 +406,25 @@ Flutter chỉ cần đọc:
 
 ```json
 {
-  "action": "walking",
-  "confidence": 0.91,
-  "timestamp": "2026-05-14T12:00:00Z",
-  "fall": false,
-  "source_id": "camera_01",
-  "plan": "vip"
+  "data": {
+    "action": "walking",
+    "confidence": 0.91,
+    "timestamp": "2026-05-14T12:00:00Z",
+    "fall": false,
+    "source_id": "camera_01",
+    "plan": "vip"
+  },
+  "meta": {
+    "request_id": "req_123",
+    "timestamp": "2026-05-14T12:00:00Z"
+  }
 }
 ```
 
 ### 9.2 Summary API
 
 ```http
-POST /api/summary/query
+POST /api/v1/summary/query
 ```
 
 Payload:
@@ -413,20 +442,26 @@ Payload:
 ### 9.3 Chat API
 
 ```http
-POST /api/chat/query
+POST /api/v1/chat/query
 ```
 
 Giao thức nên trả:
 
 ```json
 {
-  "answer": "...",
-  "intent": "activity_summary",
-  "insight": {
-    "window_ms": 86400000,
-    "total_samples": 512,
-    "dominant_action": "walking",
-    "fall_detected": false
+  "data": {
+    "answer": "...",
+    "intent": "activity_summary",
+    "insight": {
+      "window_ms": 86400000,
+      "total_samples": 512,
+      "dominant_action": "walking",
+      "fall_detected": false
+    }
+  },
+  "meta": {
+    "request_id": "req_123",
+    "timestamp": "2026-05-14T12:00:00Z"
   }
 }
 ```
