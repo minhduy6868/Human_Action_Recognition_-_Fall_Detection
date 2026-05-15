@@ -1,6 +1,7 @@
 from typing import Any
+from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class FallEvent(BaseModel):
@@ -131,6 +132,24 @@ class SummaryReportResponse(BaseModel):
     alert_counts: dict[str, int] = Field(default_factory=dict)
 
 
+class SummaryQueryRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    from_dt: datetime | None = Field(default=None, alias="from")
+    to_dt: datetime | None = Field(default=None, alias="to")
+    source_ids: list[str] = Field(default_factory=list)
+    question: str | None = None
+
+
+class SummaryQueryResponse(BaseModel):
+    from_ms: int
+    to_ms: int
+    source_ids: list[str]
+    insight: ActivityInsightResponse
+    answer: str | None = None
+    intent: str | None = None
+
+
 class ChatQueryRequest(BaseModel):
     question: str
     window_ms: int | None = None
@@ -140,3 +159,135 @@ class ChatQueryResponse(BaseModel):
     answer: str
     intent: str
     insight: ActivityInsightResponse
+
+
+class AuthLoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class AuthRefreshRequest(BaseModel):
+    refresh_token: str
+
+
+class AuthTokens(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    expires_in: int
+    refresh_expires_in: int
+
+
+class UserProfile(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    email: str
+    name: str
+    role: str
+    plan: str
+    created_at: datetime | None = None
+
+
+class SourceCreate(BaseModel):
+    name: str
+    source_type: str
+    source_url: str
+    is_active: bool = False
+
+
+class SourceUpdate(BaseModel):
+    name: str | None = None
+    source_type: str | None = None
+    source_url: str | None = None
+    is_active: bool | None = None
+
+
+class SourceResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    name: str
+    source_type: str
+    source_url: str
+    is_active: bool
+
+
+class DetectionLogResponse(BaseModel):
+    id: int
+    timestamp_ms: int
+    track_id: str
+    action: str
+    confidence: float
+    fall: bool
+    fall_confidence: float
+    people_count: int
+    objects_count: int
+    source_id: str | None
+
+
+class DetectionLogDetailResponse(DetectionLogResponse):
+    people: list[dict[str, Any]]
+    objects: list[dict[str, Any]]
+
+
+class ChatHistoryResponse(BaseModel):
+    id: int
+    question: str
+    answer: str
+    intent: str
+    window_ms: int
+    source_id: str | None
+    created_at: datetime
+
+
+class DeviceTokenRequest(BaseModel):
+    token: str
+    platform: str = "unknown"
+    source_id: str | None = None
+
+
+class DeviceTokenResponse(BaseModel):
+    registered: bool = True
+
+
+class DeviceTokenRemoveRequest(BaseModel):
+    token: str
+
+
+class OtpRequestPayload(BaseModel):
+    email: str
+    purpose: str = "verify"
+
+
+class OtpVerifyPayload(BaseModel):
+    email: str
+    otp: str
+    purpose: str = "verify"
+
+
+class OtpResponse(BaseModel):
+    ok: bool
+    expires_in: int | None = None
+
+
+class StreamStartRequest(BaseModel):
+    source_id: str
+    source_type: str
+    source_url: str
+
+
+class StreamStopRequest(BaseModel):
+    source_id: str
+
+
+class StreamActivateRequest(BaseModel):
+    source_id: str
+
+
+class StreamSessionResponse(BaseModel):
+    source_id: str
+    user_id: str | None
+    source_type: str
+    source_url: str
+    active: bool = True

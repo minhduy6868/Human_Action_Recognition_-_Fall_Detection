@@ -10,7 +10,7 @@ from app.models.schemas import (
     RealtimeStatus,
     SummaryReportResponse,
 )
-from app.services.supabase_store import SupabaseStore
+from app.services.postgres_store import PostgresStore
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -19,7 +19,7 @@ settings = get_settings()
 class AlertEngine:
     def __init__(self, state: RealtimeState) -> None:
         self._state = state
-        self._store = SupabaseStore()
+        self._store = PostgresStore()
         self._last_anomaly_check_ms = 0
         self._last_abnormal_signature = ""
         self._last_abnormal_alert_ms = 0

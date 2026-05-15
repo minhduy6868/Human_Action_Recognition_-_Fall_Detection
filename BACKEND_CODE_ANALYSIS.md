@@ -355,7 +355,7 @@ Two separate systems for person identification exist:
 - ✅ `app/services/inference_service.py`
 - ✅ `app/services/person_gallery.py`
 - ✅ `app/services/stream_service.py`
-- ✅ `app/services/supabase_store.py`
+- ✅ `app/services/postgres_store.py`
 - ✅ `app/pipelines/action_model.py`
 - ✅ `app/pipelines/action_smoothing.py`
 - ✅ `app/pipelines/action_summary.py`

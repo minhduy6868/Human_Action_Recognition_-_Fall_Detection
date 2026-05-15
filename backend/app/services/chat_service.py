@@ -21,6 +21,16 @@ class ChatService:
         answer = self._build_answer(intent, insight)
         return ChatQueryResponse(answer=answer, intent=intent, insight=insight)
 
+    def answer_from_insight(
+        self,
+        question: str,
+        insight: ActivityInsightResponse,
+    ) -> tuple[str, str]:
+        normalized = question.strip().lower()
+        intent = self._detect_intent(normalized)
+        answer = self._build_answer(intent, insight)
+        return answer, intent
+
     def _resolve_window_ms(self, question: str, window_ms: int | None) -> int:
         if window_ms is not None and window_ms > 0:
             return window_ms

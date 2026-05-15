@@ -2,7 +2,94 @@
 
 A realtime AI system that captures video, detects human poses, recognizes actions (standing, sitting, walking, lying, crouching, running), detects falls, identifies clothing colors, and tracks multiple people simultaneously. Includes a Python FastAPI backend and Flutter mobile/desktop frontend.
 
-**Status**: ✅ Backend running with enhanced detection | ✅ Flutter app deployable | ✅ Multi-person tracking
+**Status**: ✅ Backend running with enhanced detection | ✅ Flutter app deployable | ✅ Multi-person tracking | ✅ Auth + Postgres logs
+
+---
+
+## System Overview
+
+- Backend: FastAPI + JWT auth + WebSocket realtime
+- Database: Postgres for users, sources, logs, alerts, reports, chat history
+- AI: pose estimation + action detection + fall detection + event reasoning
+- Mobile: Flutter client (realtime + REST)
+
+## System Flow
+
+1. Capture frames from RTSP/webcam/file
+2. Detect people + objects (YOLO)
+3. Pose estimation per person
+4. Action recognition (sequence + smoothing)
+5. Fall detection (rule-based or ML fallback)
+6. Event reasoning (crowd/loiter/abandoned)
+7. Persist logs + alerts to Postgres
+8. Stream realtime via WebSocket + MJPEG
+
+---
+
+## AI Pipeline Overview
+
+1. Capture frames (RTSP/webcam/file)
+2. Pose estimation per person
+3. Action classification (sequence + smoothing)
+4. Fall detection (rule-based or ML fallback)
+5. Event reasoning (loitering, crowd, abandoned objects)
+6. Log to Postgres (frame logs + people/objects JSON)
+7. Realtime status via WebSocket + REST
+
+---
+
+## AI System Details
+
+### Models and Components
+
+- **Detection/Tracking**: Ultralytics YOLO (default weights: `yolo11n.pt`) for people + objects with tracking IDs.
+- **Pose Estimation**: YOLO pose model (default weights: `yolo11s-pose.pt`) for keypoints.
+- **Action Recognition**:
+  - Rule-based classifier (knee angles, bbox aspect ratio, motion) for realtime inference.
+  - Optional LSTM model (config: `USE_ML_ACTION=true`, `ACTION_MODEL_PATH=...`).
+- **Fall Detection**:
+  - Rule-based detector (drop + velocity + aspect ratio + confirmation window).
+  - Optional ML fallback using XGBoost (config: `USE_ML_FALL=true`, `FALL_MODEL_PATH=...`).
+- **Event Reasoning**: Crowd, loitering, suspicious movement, abandoned object rules.
+- **Auxiliary**: Clothing color detection + simple person identification by visual features.
+
+### Realtime Decision Logic
+
+- **No single-frame decisions**: actions and falls are inferred over temporal windows.
+- **Smoothing**: action predictions are averaged over recent frames before emitting.
+- **Fallback strategy**: if ML models are unavailable, rule-based logic is used.
+- **Performance-first**: adaptive frame skip to maintain target FPS.
+
+### Key Data Outputs
+
+- `status` includes: `action`, `confidence`, `fall`, `fall_confidence`, `track_id`.
+- `people[]` includes per-person action, bbox, clothing, fall status.
+- `objects[]` includes all detected objects + class labels + tracking IDs.
+
+### AI Configuration Knobs (backend/.env)
+
+- `YOLO_MODEL_PATH`, `YOLO_POSE_MODEL_PATH`
+- `YOLO_CONFIDENCE`, `YOLO_IOU`, `YOLO_IMG_SIZE`, `YOLO_MAX_DET`
+- `KEYPOINT_VISIBILITY_THRESHOLD`, `POSE_MATCH_MIN_IOU`
+- `USE_ML_ACTION`, `ACTION_MODEL_PATH`, `ACTION_WINDOW_FRAMES`, `ACTION_SMOOTH_WINDOW`
+- `USE_ML_FALL`, `FALL_MODEL_PATH`, `FALL_DROP_THRESHOLD`, `FALL_ASPECT_THRESHOLD`, `FALL_CONFIRM_MS`
+
+---
+
+## Database Overview (Postgres)
+
+Core tables:
+- `users`: accounts, roles, plans
+- `refresh_tokens`: refresh token storage
+- `source_connections`: per-user camera sources
+- `alerts`: alerts from rule/event detection
+- `summary_reports`: cached summaries
+- `detection_logs`: realtime logs (people/objects JSON)
+- `chat_history`: AI chat summary history
+
+Retention:
+- `detection_logs` cleanup by `LOG_RETENTION_DAYS`
+- `chat_history` cleanup by `CHAT_HISTORY_RETENTION_DAYS`
 
 ## 🎯 Key Features (Updated 2026-05-14)
 
@@ -77,16 +164,45 @@ INFO:     Uvicorn running on http://0.0.0.0:8000
 ✅ **Backend is now:**
 - Processing fall5.mp4 in real-time
 - Detecting poses and actions
-- Streaming WebSocket data on `ws://YOUR_PC_IP:8000/api/ws`
+- Streaming WebSocket data on `ws://YOUR_PC_IP:8000/api/v1/ws`
 
-### Available Endpoints
+### Available Endpoints (v1)
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
 | `/health` | GET | Health check |
-| `/api/status` | GET | Current detection status |
-| `/api/ws` | WS | Real-time stream (actions + fall alerts) |
-| `/api/history` | GET | Detection history (JSON) |
+| `/api/v1/health` | GET | API health |
+| `/api/v1/auth/login` | POST | Login (JWT) |
+| `/api/v1/auth/refresh` | POST | Refresh token |
+| `/api/v1/auth/logout` | POST | Logout (revoke refresh) |
+| `/api/v1/auth/me` | GET | Current user |
+| `/api/v1/status` | GET | Current detection status |
+| `/api/v1/history` | GET | Detection history (RAM) |
+| `/api/v1/logs` | GET | Detection logs (Postgres) |
+| `/api/v1/logs/{id}` | GET | Log detail (people/objects JSON) |
+| `/api/v1/people` | GET | Current people list |
+| `/api/v1/people/{track_id}` | GET | Person detail |
+| `/api/v1/objects` | GET | Current objects list |
+| `/api/v1/alerts` | GET | Alerts (RAM) |
+| `/api/v1/alerts/after` | GET | Alerts after id |
+| `/api/v1/fall-events` | GET | Fall events (RAM) |
+| `/api/v1/fall-events/after` | GET | Fall events after id |
+| `/api/v1/chat/query` | POST | AI summary query |
+| `/api/v1/chat/history` | GET | Chat history |
+| `/api/v1/summary/query` | POST | Summary range query |
+| `/api/v1/report/summary` | POST | Summary report |
+| `/api/v1/sources` | GET/POST | Source list/create |
+| `/api/v1/sources/{id}` | GET/PATCH/DELETE | Source detail/update/delete |
+| `/api/v1/sources/{id}/activate` | POST | Activate source |
+| `/api/v1/streams/start` | POST | Start stream by source |
+| `/api/v1/streams/stop` | POST | Stop stream by source |
+| `/api/v1/streams` | GET | Active streams |
+| `/api/v1/streams/{id}/status` | GET | Stream status |
+| `/api/v1/stream/mjpeg` | GET | MJPEG (default) |
+| `/api/v1/streams/{id}/mjpeg` | GET | MJPEG by source |
+| `/api/v1/ws` | WS | Realtime stream |
+
+**Response format**: all v1 endpoints return `{ data, meta }` or `{ error, meta }`.
 
 ---
 
@@ -130,7 +246,7 @@ flutter run
 ```
 
 Select your device when prompted. The app will:
-- ✅ Connect to WebSocket `ws://YOUR_PC_IP:8000/api/ws`
+- ✅ Connect to WebSocket `ws://YOUR_PC_IP:8000/api/v1/ws`
 - ✅ Display real-time action (standing, walking, sitting, lying)
 - ✅ Show fall detection alerts
 - ✅ Display confidence scores
