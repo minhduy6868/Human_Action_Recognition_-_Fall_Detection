@@ -178,6 +178,18 @@ class AuthTokens(BaseModel):
     refresh_expires_in: int
 
 
+class RegisterRequest(BaseModel):
+    email: str
+    name: str | None = ""
+    password: str
+
+
+class PasswordResetRequest(BaseModel):
+    email: str
+    otp: str
+    new_password: str
+
+
 class UserProfile(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

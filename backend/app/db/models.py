@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, Index
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, Index, BigInteger
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
@@ -64,7 +64,7 @@ class AlertRecord(Base):
     severity: Mapped[str] = mapped_column(String(50), nullable=False)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     message: Mapped[str] = mapped_column(Text, nullable=False)
-    timestamp_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+    timestamp_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
     track_id: Mapped[str] = mapped_column(String(50), nullable=False)
     action: Mapped[str] = mapped_column(String(50), nullable=False)
     confidence: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
@@ -79,7 +79,7 @@ class SummaryReportRecord(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     window_ms: Mapped[int] = mapped_column(Integer, nullable=False)
-    generated_at_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+    generated_at_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
     insight: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     alert_counts: Mapped[dict[str, int]] = mapped_column(JSONB, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -107,7 +107,7 @@ class FallEventRecord(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    timestamp_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+    timestamp_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
     source_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     user_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     track_id: Mapped[str] = mapped_column(String(50), nullable=False)
@@ -135,7 +135,7 @@ class CameraMetric(Base):
     source_id: Mapped[str] = mapped_column(String(100), nullable=False)
     user_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     window_ms: Mapped[int] = mapped_column(Integer, nullable=False)
-    window_start_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+    window_start_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
     fps: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     latency_ms: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     dropped_frames: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -205,7 +205,7 @@ class DetectionLog(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    timestamp_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+    timestamp_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
     track_id: Mapped[str] = mapped_column(String(50), nullable=False, default="0")
     action: Mapped[str] = mapped_column(String(50), nullable=False, default="unknown")
     confidence: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
