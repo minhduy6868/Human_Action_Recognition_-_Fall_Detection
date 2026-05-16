@@ -114,6 +114,13 @@ class Settings(BaseSettings):
     emailjs_template_id: str = ""
     emailjs_public_key: str = ""
     emailjs_otp_template_id: str = ""
+    # SMTP fallback settings
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_pass: str = ""
+    smtp_use_tls: bool = True
+    email_from: str = ""
     notification_cooldown_ms: int = 15 * 1000
     otp_length: int = 6
     otp_ttl_minutes: int = 10

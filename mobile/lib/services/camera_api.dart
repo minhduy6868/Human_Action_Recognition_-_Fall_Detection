@@ -1,18 +1,14 @@
-import 'dart:convert';
-
-import 'package:http/http.dart' as http;
-
-import '../core/app_config.dart';
 import '../models/camera_info.dart';
+import 'api_client.dart';
 
 class CameraApi {
-  Future<CameraList> fetchCameras() async {
-    final response = await http.get(Uri.parse(AppConfig.camerasUrl));
-    if (response.statusCode != 200) {
-      throw Exception('Failed to load cameras: ${response.statusCode}');
-    }
+  CameraApi(this.client);
 
-    final payload = jsonDecode(response.body) as Map<String, dynamic>;
-    return CameraList.fromMap(payload);
+  final ApiClient client;
+
+  Future<CameraList> fetchCameras() async {
+    final payload = await client.getJson('/cameras', auth: true);
+    final data = payload['data'] as Map<String, dynamic>;
+    return CameraList.fromMap(data);
   }
 }

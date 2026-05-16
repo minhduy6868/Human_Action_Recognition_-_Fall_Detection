@@ -669,22 +669,40 @@ def mjpeg_stream_by_source(source_id: str, request: Request, current_user=Depend
 
 
 @router.websocket("/ws")
-async def stream_ws(websocket: WebSocket) -> None:
+async def stream_ws(websocket: WebSocket, current_user=Depends(get_current_user_ws), db: Session = Depends(get_db)) -> None:
     await websocket.accept()
+    # Start all active sources for this user (presence-driven)
     try:
+        sources = db.execute(
+            select(SourceConnection).where(SourceConnection.user_id == current_user.id, SourceConnection.is_active == True)
+        ).scalars().all()
+        for src in sources:
+            stream_manager.start(source_id=src.id, user_id=current_user.id, source_type=src.source_type, source_url=src.source_url)
+
         while True:
             latest = state.get_latest()
             await websocket.send_json(latest.model_dump())
             await asyncio.sleep(settings.ws_interval_ms / 1000)
     except WebSocketDisconnect:
+        # Stop all sessions belonging to this user when websocket disconnects
+        for session in stream_manager.list():
+            if session.user_id == current_user.id:
+                stream_manager.stop(session.source_id)
         return
 
 
 @router.websocket("/ws/fall-alerts")
-async def fall_alert_ws(websocket: WebSocket) -> None:
+async def fall_alert_ws(websocket: WebSocket, current_user=Depends(get_current_user_ws), db: Session = Depends(get_db)) -> None:
     await websocket.accept()
-    last_event_id = 0
+    # Ensure user's active sources are running while connected
     try:
+        sources = db.execute(
+            select(SourceConnection).where(SourceConnection.user_id == current_user.id, SourceConnection.is_active == True)
+        ).scalars().all()
+        for src in sources:
+            stream_manager.start(source_id=src.id, user_id=current_user.id, source_type=src.source_type, source_url=src.source_url)
+
+        last_event_id = 0
         while True:
             events = state.get_fall_events_after(last_event_id)
             for event in events:
@@ -697,14 +715,23 @@ async def fall_alert_ws(websocket: WebSocket) -> None:
                 last_event_id = event.event_id
             await asyncio.sleep(0.1)
     except WebSocketDisconnect:
+        for session in stream_manager.list():
+            if session.user_id == current_user.id:
+                stream_manager.stop(session.source_id)
         return
 
 
 @router.websocket("/ws/alerts")
-async def alert_ws(websocket: WebSocket) -> None:
+async def alert_ws(websocket: WebSocket, current_user=Depends(get_current_user_ws), db: Session = Depends(get_db)) -> None:
     await websocket.accept()
-    last_alert_id = 0
     try:
+        sources = db.execute(
+            select(SourceConnection).where(SourceConnection.user_id == current_user.id, SourceConnection.is_active == True)
+        ).scalars().all()
+        for src in sources:
+            stream_manager.start(source_id=src.id, user_id=current_user.id, source_type=src.source_type, source_url=src.source_url)
+
+        last_alert_id = 0
         while True:
             alerts = state.get_alerts_after(last_alert_id)
             for alert in alerts:
@@ -717,4 +744,7 @@ async def alert_ws(websocket: WebSocket) -> None:
                 last_alert_id = alert.alert_id
             await asyncio.sleep(0.1)
     except WebSocketDisconnect:
+        for session in stream_manager.list():
+            if session.user_id == current_user.id:
+                stream_manager.stop(session.source_id)
         return

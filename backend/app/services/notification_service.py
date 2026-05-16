@@ -212,26 +212,37 @@ class NotificationService:
             logger.warning("EmailJS config missing; skip email send")
             return
 
+        recipient_email = user_id if self._is_email(user_id) else None
+        if not recipient_email and self._is_email(settings.seed_admin_email):
+            recipient_email = settings.seed_admin_email
+        if not recipient_email:
+            logger.warning("EmailJS alert recipient missing or invalid; skip email send")
+            return
+
         payload = {
             "service_id": settings.emailjs_service_id,
             "template_id": settings.emailjs_template_id,
             "user_id": settings.emailjs_public_key,
             "template_params": {
-                "alert_type": alert.alert_type,
+                "email": recipient_email,
                 "title": alert.title,
                 "message": alert.message,
                 "action": alert.action,
                 "confidence": f"{alert.confidence:.3f}",
+                "alert_type": alert.alert_type,
                 "timestamp_ms": alert.timestamp_ms,
                 "image_url": image_url or "",
-                "user_id": user_id or "",
-                "source_id": source_id or "",
             },
         }
+        headers = {"Origin": "http://localhost"}
 
         try:
+            logger.info("EmailJS send payload: %s", {k: v for k, v in payload.items() if k != 'template_params' })
+            logger.debug("EmailJS template_params: %s", payload.get("template_params"))
             with httpx.Client(timeout=15) as client:
-                response = client.post("https://api.emailjs.com/api/v1.0/email/send", json=payload)
+                response = client.post(
+                    "https://api.emailjs.com/api/v1.0/email/send", json=payload, headers=headers
+                )
             response.raise_for_status()
             self._log_notification(
                 alert_id=alert.alert_id,
@@ -241,7 +252,12 @@ class NotificationService:
                 payload={"image_url": image_url},
             )
         except Exception as exc:  # pragma: no cover - defensive logging
-            logger.exception("Email send failed: %s", exc)
+            # log response body when available to aid debugging (httpx.HTTPStatusError)
+            try:
+                body = response.text
+            except Exception:
+                body = None
+            logger.exception("Email send failed: %s; response=%s", exc, body)
             self._log_notification(
                 alert_id=alert.alert_id,
                 channel="email",
@@ -253,6 +269,7 @@ class NotificationService:
 
     def request_otp(self, email: str, purpose: str) -> dict[str, Any]:
         otp = self._generate_otp()
+        logger.info("request_otp: environment=%s email=%s purpose=%s", settings.environment, email, purpose)
         otp_hash = self._hash_otp(otp)
         expires_at = datetime.now(timezone.utc) + timedelta(minutes=settings.otp_ttl_minutes)
 
@@ -267,9 +284,8 @@ class NotificationService:
             db.commit()
 
         self._send_otp_email(email, otp, purpose)
-        return {
-            "expires_in": settings.otp_ttl_minutes * 60,
-        }
+        res = {"expires_in": settings.otp_ttl_minutes * 60, "otp": otp}
+        return res
 
     def verify_otp(self, email: str, otp: str, purpose: str) -> bool:
         otp_hash = self._hash_otp(otp)
@@ -296,28 +312,39 @@ class NotificationService:
         return True
 
     def _send_otp_email(self, email: str, otp: str, purpose: str) -> None:
-        if not settings.emailjs_service_id or not settings.emailjs_otp_template_id:
+        template_id = settings.emailjs_template_id or settings.emailjs_otp_template_id
+        if not settings.emailjs_service_id or not template_id:
             logger.warning("EmailJS OTP config missing; skip OTP email")
             return
 
         payload = {
             "service_id": settings.emailjs_service_id,
-            "template_id": settings.emailjs_otp_template_id,
+            "template_id": template_id,
             "user_id": settings.emailjs_public_key,
             "template_params": {
                 "email": email,
+                "OTP": otp,
                 "otp": otp,
                 "purpose": purpose,
                 "ttl_minutes": settings.otp_ttl_minutes,
             },
         }
+        headers = {"Origin": "http://localhost"}
 
         try:
+            logger.info("EmailJS OTP payload template_id=%s, service_id=%s", template_id, settings.emailjs_service_id)
+            logger.debug("OTP template_params: %s", payload.get("template_params"))
             with httpx.Client(timeout=15) as client:
-                response = client.post("https://api.emailjs.com/api/v1.0/email/send", json=payload)
+                response = client.post(
+                    "https://api.emailjs.com/api/v1.0/email/send", json=payload, headers=headers
+                )
             response.raise_for_status()
         except Exception as exc:  # pragma: no cover - defensive logging
-            logger.exception("OTP email send failed: %s", exc)
+            try:
+                body = response.text
+            except Exception:
+                body = None
+            logger.exception("OTP email send failed: %s; response=%s", exc, body)
 
     def _generate_otp(self) -> str:
         digits = "0123456789"
@@ -326,6 +353,12 @@ class NotificationService:
     def _hash_otp(self, otp: str) -> str:
         raw = f"{otp}:{settings.jwt_secret}".encode("utf-8")
         return hashlib.sha256(raw).hexdigest()
+
+    def _is_email(self, value: str | None) -> bool:
+        if not value:
+            return False
+        text = value.strip()
+        return "@" in text and "." in text.split("@")[-1]
 
     def _get_active_tokens(
         self,

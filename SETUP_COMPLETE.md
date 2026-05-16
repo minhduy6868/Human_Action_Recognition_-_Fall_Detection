@@ -141,6 +141,7 @@ flutter logs
    - Webcam: Set `CAMERA_SOURCE=webcam` in .env
    - IP Camera: Set `CAMERA_SOURCE=rtsp` + `RTSP_URL=...`
    - Different video: Change `VIDEO_FILE_PATH`
+   - Manage sources from app: Open the app, sign in, then tap the antenna/settings icon on the Realtime Monitor to add/activate sources.
 
 3. **Fine-tune detection** 🎛️
    - Adjust `FALL_DROP_THRESHOLD`, `FALL_ASPECT_THRESHOLD`

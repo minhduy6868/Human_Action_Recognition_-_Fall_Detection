@@ -1,16 +1,29 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
 from app.api.response import api_response
 from app.db.database import get_db
-from app.models.schemas import AuthLoginRequest, AuthRefreshRequest, UserProfile
+from app.models.schemas import (
+    AuthLoginRequest,
+    AuthRefreshRequest,
+    UserProfile,
+    OtpRequestPayload,
+    OtpVerifyPayload,
+    OtpResponse,
+    RegisterRequest,
+    PasswordResetRequest,
+)
 from app.services.auth_service import AuthService
+from app.services.notification_service import NotificationService
+from app.services.user_service import UserService
 
 router = APIRouter()
 service = AuthService()
+notification = NotificationService()
+user_service = UserService()
 
 
 @router.post("/login", response_model=dict)
@@ -48,3 +61,42 @@ def logout(
 def me(request: Request, current_user=Depends(get_current_user)) -> dict:
     profile = UserProfile.from_orm(current_user)
     return api_response(profile.model_dump(), request)
+
+
+@router.post("/register", response_model=dict)
+def register(
+    payload: RegisterRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict:
+    user = user_service.create_user(db, payload.email, payload.name or "", payload.password)
+    tokens = service.issue_tokens(db, user)
+    return api_response(tokens, request)
+
+
+@router.post("/otp/request", response_model=dict)
+def otp_request(payload: OtpRequestPayload, request: Request) -> dict:
+    res = notification.request_otp(payload.email, payload.purpose)
+    body = {"ok": True, "expires_in": res.get("expires_in")}
+    if res.get("otp"):
+        body["otp"] = res.get("otp")
+    return api_response(body, request)
+
+
+@router.post("/otp/verify", response_model=dict)
+def otp_verify(payload: OtpVerifyPayload, request: Request) -> dict:
+    ok = notification.verify_otp(payload.email, payload.otp, payload.purpose)
+    return api_response({"ok": ok}, request)
+
+
+@router.post("/password/reset", response_model=dict)
+def password_reset(
+    payload: PasswordResetRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict:
+    ok = notification.verify_otp(payload.email, payload.otp, "reset")
+    if not ok:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid OTP")
+    user_service.set_password(db, payload.email, payload.new_password)
+    return api_response({"reset": True}, request)
