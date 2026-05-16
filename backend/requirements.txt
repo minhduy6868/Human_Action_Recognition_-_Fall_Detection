@@ -7,3 +7,4 @@ passlib[bcrypt]==1.7.4
 bcrypt==3.2.2
 pyjwt==2.9.0
 uvicorn[standard]==0.30.6
+httpx==0.24.0
