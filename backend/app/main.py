@@ -6,7 +6,6 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from app.api.routes import router as api_router
 from app.api.response import error_response
 from app.api.v1.router import router as api_v1_router
 from app.core.config import get_settings
@@ -33,7 +32,6 @@ from app.services.stream_service import stream_service
 settings = get_settings()
 
 app = FastAPI(title=settings.app_name, version=settings.app_version)
-app.include_router(api_router, prefix="/api")
 app.include_router(api_v1_router, prefix="/api/v1")
 
 
