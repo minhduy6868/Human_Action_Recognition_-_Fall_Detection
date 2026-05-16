@@ -339,7 +339,7 @@ Payload:
 ### 8.5 Summary theo nhiều ngày
 
 ```http
-POST /api/summary/query
+POST /api/v1/summary/query
 ```
 
 Payload:

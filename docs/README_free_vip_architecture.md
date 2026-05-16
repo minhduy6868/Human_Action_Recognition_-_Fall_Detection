@@ -223,11 +223,11 @@ Gói VIP:
 ### 6.3 API đề xuất
 
 ```http
-GET    /api/sources
-POST   /api/sources
-PATCH  /api/sources/{source_id}
-DELETE /api/sources/{source_id}
-POST   /api/sources/{source_id}/activate
+GET    /api/v1/sources
+POST   /api/v1/sources
+PATCH  /api/v1/sources/{source_id}
+DELETE /api/v1/sources/{source_id}
+POST   /api/v1/sources/{source_id}/activate
 ```
 
 Payload thêm nguồn:
