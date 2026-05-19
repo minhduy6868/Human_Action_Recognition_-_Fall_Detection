@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../../models/person_action.dart';
+import '../../models/person_action.dart';
 
 class PeopleListWidget extends StatelessWidget {
   const PeopleListWidget({
@@ -12,6 +12,7 @@ class PeopleListWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     if (people.isEmpty) {
       return Card(
         elevation: 2,
@@ -19,11 +20,11 @@ class PeopleListWidget extends StatelessWidget {
           padding: const EdgeInsets.all(16.0),
           child: Row(
             children: [
-              Icon(Icons.person_off, color: Colors.grey[400]),
+              Icon(Icons.person_off, color: theme.textTheme.bodySmall?.color),
               const SizedBox(width: 12),
               Text(
                 'No people detected',
-                style: TextStyle(color: Colors.grey[600], fontSize: 14),
+                style: theme.textTheme.bodyMedium,
               ),
             ],
           ),
@@ -40,26 +41,25 @@ class PeopleListWidget extends StatelessWidget {
             padding: const EdgeInsets.all(16.0),
             child: Row(
               children: [
-                Icon(Icons.people, color: Colors.blue[700]),
+                Icon(Icons.people, color: theme.colorScheme.primary),
                 const SizedBox(width: 8),
                 Text(
                   'People Detected (${people.length})',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
               ],
             ),
           ),
-          Divider(height: 0, color: Colors.grey[300]),
+          Divider(height: 0, color: theme.dividerColor),
           ListView.separated(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             itemCount: people.length,
             separatorBuilder: (_, __) => Divider(
               height: 0,
-              color: Colors.grey[200],
+              color: theme.dividerColor,
             ),
             itemBuilder: (context, index) {
               final person = people[index];
@@ -72,32 +72,32 @@ class PeopleListWidget extends StatelessWidget {
   }
 
   Widget _buildPersonTile(PersonAction person) {
-    Color actionColor = Colors.blue;
+    Color actionColor = const Color(0xFF1C7ED6);
     IconData actionIcon = Icons.person;
 
     switch (person.action.toLowerCase()) {
       case 'walking':
-        actionColor = Colors.blue;
+        actionColor = const Color(0xFF3BC9DB);
         actionIcon = Icons.directions_walk;
         break;
       case 'running':
-        actionColor = Colors.deepPurple;
+        actionColor = const Color(0xFFFF6B6B);
         actionIcon = Icons.directions_run;
         break;
       case 'sitting':
-        actionColor = Colors.green;
+        actionColor = const Color(0xFFF59F00);
         actionIcon = Icons.chair;
         break;
       case 'standing':
-        actionColor = Colors.orange;
+        actionColor = const Color(0xFF1C7ED6);
         actionIcon = Icons.person;
         break;
       case 'lying':
-        actionColor = Colors.red;
+        actionColor = const Color(0xFF2F9E44);
         actionIcon = Icons.bed;
         break;
       case 'crouching':
-        actionColor = Colors.teal;
+        actionColor = const Color(0xFF12B886);
         actionIcon = Icons.accessibility_new;
         break;
     }
@@ -114,7 +114,7 @@ class PeopleListWidget extends StatelessWidget {
       ),
       title: Text(
         'Person #${person.trackId}',
-        style: const TextStyle(fontWeight: FontWeight.bold),
+        style: const TextStyle(fontWeight: FontWeight.w700),
       ),
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

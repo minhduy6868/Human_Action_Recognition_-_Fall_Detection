@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_mjpeg/flutter_mjpeg.dart';
 
-import '../../core/app_config.dart';
-import '../fall_detection/widgets/connection_status.dart';
-import 'cubit/camera_monitor_cubit.dart';
-import 'cubit/camera_monitor_state.dart';
+import '../core/app_config.dart';
+import '../state/camera_monitor/camera_monitor_cubit.dart';
+import '../state/camera_monitor/camera_monitor_state.dart';
+import '../widgets/fall_detection/connection_status.dart';
 
 class CameraMonitorScreen extends StatefulWidget {
   const CameraMonitorScreen({super.key});
@@ -23,9 +23,15 @@ class _CameraMonitorScreenState extends State<CameraMonitorScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Realtime Video Monitor'),
+        title: Text(
+          'Realtime Monitor',
+          style: theme.textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.w800,
+          ),
+        ),
         actions: [
           BlocBuilder<CameraMonitorCubit, CameraMonitorState>(
             builder: (context, state) {
@@ -42,38 +48,35 @@ class _CameraMonitorScreenState extends State<CameraMonitorScreen> {
             icon: const Icon(Icons.refresh),
             onPressed: () => context.read<CameraMonitorCubit>().loadCameras(),
           ),
+          IconButton(
+            icon: const Icon(Icons.settings_input_antenna),
+            onPressed: () => Navigator.of(context).pushNamed('/sources'),
+          ),
         ],
       ),
       body: BlocBuilder<CameraMonitorCubit, CameraMonitorState>(
         builder: (context, state) {
-          return Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Theme.of(context).colorScheme.surface,
-                  Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3),
-                ],
-              ),
-            ),
-            child: SafeArea(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _buildHeader(context, state),
-                    const SizedBox(height: 16),
-                    _buildStreamCard(context, state),
-                    const SizedBox(height: 16),
-                    _buildActionFrame(context, state),
-                    const SizedBox(height: 16),
-                    _buildLogPanel(context, state),
-                  ],
+          return Stack(
+            children: [
+              const _Backdrop(),
+              SafeArea(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _buildHeader(context, state),
+                      const SizedBox(height: 16),
+                      _buildStreamCard(context, state),
+                      const SizedBox(height: 16),
+                      _buildActionFrame(context, state),
+                      const SizedBox(height: 16),
+                      _buildLogPanel(context, state),
+                    ],
+                  ),
                 ),
               ),
-            ),
+            ],
           );
         },
       ),
@@ -81,7 +84,7 @@ class _CameraMonitorScreenState extends State<CameraMonitorScreen> {
   }
 
   Widget _buildHeader(BuildContext context, CameraMonitorState state) {
-    final chipColor = state.isConnected ? Colors.green : Colors.orange;
+    final chipColor = state.isConnected ? const Color(0xFF1FBF9B) : const Color(0xFFF1A53A);
     final chipText = state.isConnected ? 'Live backend' : 'Reconnecting';
 
     return Card(
@@ -89,13 +92,13 @@ class _CameraMonitorScreenState extends State<CameraMonitorScreen> {
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: Container(
-        decoration: BoxDecoration(
+        decoration: const BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              Theme.of(context).colorScheme.primary.withOpacity(0.96),
-              Theme.of(context).colorScheme.secondary.withOpacity(0.88),
+              Color(0xFF0B2E4C),
+              Color(0xFF124B6C),
             ],
           ),
         ),
@@ -106,7 +109,7 @@ class _CameraMonitorScreenState extends State<CameraMonitorScreen> {
               width: 56,
               height: 56,
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.16),
+                color: Colors.white.withOpacity(0.14),
                 borderRadius: BorderRadius.circular(16),
               ),
               child: const Icon(Icons.videocam, color: Colors.white, size: 30),
@@ -117,7 +120,7 @@ class _CameraMonitorScreenState extends State<CameraMonitorScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'Backend stream to app',
+                    'Live stream intelligence',
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 22,
@@ -126,7 +129,7 @@ class _CameraMonitorScreenState extends State<CameraMonitorScreen> {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'MJPEG video + realtime action status + logs',
+                    'Realtime video, action status, and fall alerts',
                     style: TextStyle(
                       color: Colors.white.withOpacity(0.88),
                       fontSize: 13,
@@ -138,8 +141,7 @@ class _CameraMonitorScreenState extends State<CameraMonitorScreen> {
                     runSpacing: 8,
                     children: [
                       _HeaderChip(label: chipText, color: chipColor),
-                      const _HeaderChip(
-                          label: 'Any input source', color: Colors.blueGrey),
+                      const _HeaderChip(label: 'Stream ready', color: Colors.white),
                     ],
                   ),
                 ],
@@ -161,15 +163,14 @@ class _CameraMonitorScreenState extends State<CameraMonitorScreen> {
         children: [
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            color:
-                Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.35),
+            color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.24),
             child: Row(
               children: [
                 const Icon(Icons.live_tv, size: 18),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'Live video from backend',
+                    'Camera feed',
                     style: Theme.of(context).textTheme.titleSmall?.copyWith(
                           fontWeight: FontWeight.w700,
                         ),
@@ -244,8 +245,8 @@ class _CameraMonitorScreenState extends State<CameraMonitorScreen> {
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              actionColor.withOpacity(0.94),
-              actionColor.withOpacity(0.58),
+              actionColor.withOpacity(0.92),
+              actionColor.withOpacity(0.52),
             ],
           ),
         ),
@@ -271,7 +272,7 @@ class _CameraMonitorScreenState extends State<CameraMonitorScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        'Action frame',
+                        'Action snapshot',
                         style: TextStyle(
                           color: Colors.white70,
                           fontWeight: FontWeight.w600,
@@ -408,7 +409,7 @@ class _CameraMonitorScreenState extends State<CameraMonitorScreen> {
                     .surfaceVariant
                     .withOpacity(0.2),
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.black12),
+                border: Border.all(color: Theme.of(context).dividerColor),
               ),
               child: state.logs.isEmpty
                   ? Center(
@@ -431,7 +432,7 @@ class _CameraMonitorScreenState extends State<CameraMonitorScreen> {
                           decoration: BoxDecoration(
                             color: Theme.of(context).colorScheme.surface,
                             borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.black12),
+                            border: Border.all(color: Theme.of(context).dividerColor),
                           ),
                           child: Text(
                             line,
@@ -453,15 +454,19 @@ class _CameraMonitorScreenState extends State<CameraMonitorScreen> {
   Color _actionColor(String action) {
     switch (action.toLowerCase()) {
       case 'standing':
-        return Colors.blue;
+        return const Color(0xFF1C7ED6);
       case 'walking':
-        return Colors.cyan;
+        return const Color(0xFF3BC9DB);
+      case 'running':
+        return const Color(0xFFFF6B6B);
       case 'sitting':
-        return Colors.orange;
+        return const Color(0xFFF59F00);
       case 'lying':
-        return Colors.purple;
+        return const Color(0xFF2F9E44);
+      case 'crouching':
+        return const Color(0xFF12B886);
       default:
-        return Colors.grey;
+        return const Color(0xFF8391A1);
     }
   }
 
@@ -471,10 +476,14 @@ class _CameraMonitorScreenState extends State<CameraMonitorScreen> {
         return Icons.person;
       case 'walking':
         return Icons.directions_walk;
+      case 'running':
+        return Icons.directions_run;
       case 'sitting':
         return Icons.chair;
       case 'lying':
         return Icons.hotel;
+      case 'crouching':
+        return Icons.accessibility_new;
       default:
         return Icons.help_outline;
     }
@@ -496,12 +505,13 @@ class _HeaderChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isWhite = color == Colors.white;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.2),
+        color: isWhite ? Colors.white.withOpacity(0.2) : color.withOpacity(0.2),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: Colors.white.withOpacity(0.2)),
+        border: Border.all(color: Colors.white.withOpacity(0.25)),
       ),
       child: Text(
         label,
@@ -510,6 +520,72 @@ class _HeaderChip extends StatelessWidget {
           fontSize: 12,
           fontWeight: FontWeight.w600,
         ),
+      ),
+    );
+  }
+}
+
+class _Backdrop extends StatelessWidget {
+  const _Backdrop();
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: isDark
+              ? [const Color(0xFF0B1218), const Color(0xFF111E2A)]
+              : [const Color(0xFFF2F6FB), const Color(0xFFF8FBFF)],
+        ),
+      ),
+      child: Stack(
+        children: [
+          Positioned(
+            top: -80,
+            right: -40,
+            child: _GlowBlob(
+              color: const Color(0xFFF36B4E).withOpacity(0.15),
+              size: 200,
+            ),
+          ),
+          Positioned(
+            bottom: -70,
+            left: -30,
+            child: _GlowBlob(
+              color: const Color(0xFF1FBF9B).withOpacity(0.12),
+              size: 180,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _GlowBlob extends StatelessWidget {
+  const _GlowBlob({required this.color, required this.size});
+
+  final Color color;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: color,
+        boxShadow: [
+          BoxShadow(
+            color: color,
+            blurRadius: 80,
+            spreadRadius: 10,
+          ),
+        ],
       ),
     );
   }

@@ -2,9 +2,9 @@ import 'dart:async';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import '../../../models/realtime_status.dart';
-import '../../../services/realtime_stream.dart';
-import '../../../services/camera_api.dart';
+import '../../models/realtime_status.dart';
+import '../../services/realtime_stream.dart';
+import '../../services/camera_api.dart';
 import 'camera_monitor_state.dart';
 
 class CameraMonitorCubit extends Cubit<CameraMonitorState> {

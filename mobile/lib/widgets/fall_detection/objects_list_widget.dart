@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../../models/detected_object.dart';
+import '../../models/detected_object.dart';
 
 class ObjectsListWidget extends StatelessWidget {
   const ObjectsListWidget({
@@ -12,7 +12,7 @@ class ObjectsListWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Filter out people (class_id != 0)
+    final theme = Theme.of(context);
     final nonPeopleObjects = objects.where((obj) => !obj.isPerson).toList();
 
     if (nonPeopleObjects.isEmpty) {
@@ -22,11 +22,11 @@ class ObjectsListWidget extends StatelessWidget {
           padding: const EdgeInsets.all(16.0),
           child: Row(
             children: [
-              Icon(Icons.checkmark_circle_outline, color: Colors.grey[400]),
+              Icon(Icons.check_circle_outline, color: theme.textTheme.bodySmall?.color),
               const SizedBox(width: 12),
               Text(
                 'No other objects detected',
-                style: TextStyle(color: Colors.grey[600], fontSize: 14),
+                style: theme.textTheme.bodyMedium,
               ),
             ],
           ),
@@ -43,26 +43,25 @@ class ObjectsListWidget extends StatelessWidget {
             padding: const EdgeInsets.all(16.0),
             child: Row(
               children: [
-                Icon(Icons.category, color: Colors.purple[700]),
+                Icon(Icons.category, color: theme.colorScheme.primary),
                 const SizedBox(width: 8),
                 Text(
                   'Objects Detected (${nonPeopleObjects.length})',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
               ],
             ),
           ),
-          Divider(height: 0, color: Colors.grey[300]),
+          Divider(height: 0, color: theme.dividerColor),
           ListView.separated(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             itemCount: nonPeopleObjects.length,
             separatorBuilder: (_, __) => Divider(
               height: 0,
-              color: Colors.grey[200],
+              color: theme.dividerColor,
             ),
             itemBuilder: (context, index) {
               final obj = nonPeopleObjects[index];
@@ -106,11 +105,11 @@ class ObjectsListWidget extends StatelessWidget {
 
   Color _getObjectColor(String label) {
     final labelLower = label.toLowerCase();
-    if (labelLower.contains('chair')) return Colors.brown;
-    if (labelLower.contains('table')) return Colors.amber;
-    if (labelLower.contains('bed')) return Colors.pink;
-    if (labelLower.contains('door')) return Colors.cyan;
-    if (labelLower.contains('window')) return Colors.teal;
-    return Colors.indigo;
+    if (labelLower.contains('chair')) return const Color(0xFF9C6B3A);
+    if (labelLower.contains('table')) return const Color(0xFFF59F00);
+    if (labelLower.contains('bed')) return const Color(0xFFE8590C);
+    if (labelLower.contains('door')) return const Color(0xFF3BC9DB);
+    if (labelLower.contains('window')) return const Color(0xFF1FBF9B);
+    return const Color(0xFF1C7ED6);
   }
 }

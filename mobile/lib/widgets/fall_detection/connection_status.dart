@@ -16,9 +16,9 @@ class ConnectionStatus extends StatelessWidget {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
-          color: Colors.green.withOpacity(0.15),
+          color: const Color(0xFF1FBF9B).withOpacity(0.16),
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: Colors.green, width: 1),
+          border: Border.all(color: const Color(0xFF1FBF9B), width: 1),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -28,14 +28,14 @@ class ConnectionStatus extends StatelessWidget {
               height: 8,
               decoration: const BoxDecoration(
                 shape: BoxShape.circle,
-                color: Colors.green,
+                color: Color(0xFF1FBF9B),
               ),
             ),
             const SizedBox(width: 8),
             const Text(
               'Connected',
               style: TextStyle(
-                color: Colors.green,
+                color: Color(0xFF1FBF9B),
                 fontWeight: FontWeight.w600,
                 fontSize: 12,
               ),
@@ -48,9 +48,9 @@ class ConnectionStatus extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.orange.withOpacity(0.15),
+        color: const Color(0xFFF1A53A).withOpacity(0.16),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.orange, width: 1),
+        border: Border.all(color: const Color(0xFFF1A53A), width: 1),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -60,14 +60,14 @@ class ConnectionStatus extends StatelessWidget {
             height: 8,
             child: CircularProgressIndicator(
               strokeWidth: 1.5,
-              valueColor: AlwaysStoppedAnimation<Color>(Colors.orange.shade700),
+              valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFF1A53A)),
             ),
           ),
           const SizedBox(width: 8),
           Text(
             error != null ? 'Connection Error' : 'Connecting...',
             style: TextStyle(
-              color: Colors.orange.shade700,
+              color: const Color(0xFFF1A53A),
               fontWeight: FontWeight.w600,
               fontSize: 12,
             ),

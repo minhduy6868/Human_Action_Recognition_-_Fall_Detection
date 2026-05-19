@@ -41,19 +41,19 @@ class StatusCard extends StatelessWidget {
   Color get actionColor {
     switch (action.toLowerCase()) {
       case 'standing':
-        return Colors.blue;
+        return const Color(0xFF1C7ED6);
       case 'walking':
-        return Colors.cyan;
+        return const Color(0xFF3BC9DB);
       case 'running':
-        return Colors.deepPurple;
+        return const Color(0xFFFF6B6B);
       case 'sitting':
-        return Colors.orange;
+        return const Color(0xFFF59F00);
       case 'lying':
-        return Colors.purple;
+        return const Color(0xFF2F9E44);
       case 'crouching':
-        return Colors.teal;
+        return const Color(0xFF12B886);
       default:
-        return Colors.grey;
+        return const Color(0xFF8391A1);
     }
   }
 
@@ -81,50 +81,43 @@ class StatusCard extends StatelessWidget {
     final conf01 = _clamp01(confidence);
     final fall01 = _clamp01(fallConfidence);
     return Card(
-      elevation: 8,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Container(
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(18),
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              actionColor.withOpacity(0.8),
-              actionColor.withOpacity(0.4),
+              actionColor.withOpacity(0.92),
+              actionColor.withOpacity(0.5),
             ],
           ),
         ),
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(22),
         child: Column(
           children: [
-            // Action Icon
             Container(
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: Colors.white.withOpacity(0.2),
+                color: Colors.white.withOpacity(0.18),
               ),
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.all(18),
               child: Icon(
                 actionIcon,
-                size: 56,
+                size: 48,
                 color: Colors.white,
               ),
             ),
             const SizedBox(height: 16),
-
-            // Action Name
             Text(
               _actionLabel(action),
               style: const TextStyle(
-                fontSize: 28,
+                fontSize: 26,
                 fontWeight: FontWeight.bold,
                 color: Colors.white,
               ),
             ),
             const SizedBox(height: 12),
-
-            // Confidence Bar
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -135,7 +128,7 @@ class StatusCard extends StatelessWidget {
                       'Confidence',
                       style: TextStyle(
                         fontSize: 14,
-                        color: Colors.white.withOpacity(0.8),
+                        color: Colors.white.withOpacity(0.85),
                       ),
                     ),
                     Text(
@@ -150,41 +143,39 @@ class StatusCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(999),
                   child: LinearProgressIndicator(
                     value: conf01,
                     minHeight: 8,
                     backgroundColor: Colors.white.withOpacity(0.2),
                     valueColor: AlwaysStoppedAnimation<Color>(
-                      Colors.white.withOpacity(0.9),
+                      Colors.white.withOpacity(0.92),
                     ),
                   ),
                 ),
               ],
             ),
-
-            // Fall Status
             if (isFalling) ...[
-              const SizedBox(height: 20),
+              const SizedBox(height: 18),
               Container(
                 decoration: BoxDecoration(
-                  color: Colors.red.withOpacity(0.3),
+                  color: Colors.red.withOpacity(0.25),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.white, width: 2),
+                  border: Border.all(color: Colors.white, width: 1.6),
                 ),
-                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     const Icon(Icons.warning, color: Colors.white),
                     const SizedBox(width: 8),
                     Text(
-                      'FALL DETECTED!',
+                      'FALL DETECTED',
                       style: TextStyle(
-                        fontSize: 16,
+                        fontSize: 15,
                         fontWeight: FontWeight.bold,
                         color: Colors.white,
-                        letterSpacing: 1.2,
+                        letterSpacing: 1.1,
                       ),
                     ),
                   ],
@@ -195,7 +186,7 @@ class StatusCard extends StatelessWidget {
                 'Confidence: ${(fall01 * 100).toStringAsFixed(1)}%',
                 style: TextStyle(
                   fontSize: 12,
-                  color: Colors.white.withOpacity(0.7),
+                  color: Colors.white.withOpacity(0.75),
                 ),
               ),
             ],

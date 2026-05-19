@@ -13,7 +13,7 @@ class AppConfig {
 
     switch (defaultTargetPlatform) {
       case TargetPlatform.android:
-        return '192.168.1.5:8000'; // Updated to current PC IP
+        return '192.168.1.10:8000'; // Updated to current PC IP
       case TargetPlatform.iOS:
         return '127.0.0.1:8000';
       default:
