@@ -2,9 +2,9 @@ import 'dart:async';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import '../../../models/realtime_status.dart';
-import '../../../services/realtime_stream.dart';
-import '../utils/action_vote_buffer.dart';
+import '../../models/realtime_status.dart';
+import '../../services/realtime_stream.dart';
+import '../../utils/action_vote_buffer.dart';
 import 'realtime_state.dart';
 
 class RealtimeCubit extends Cubit<RealtimeState> {
@@ -21,11 +21,9 @@ class RealtimeCubit extends Cubit<RealtimeState> {
     _subscription = null;
 
     try {
-      print('[RealtimeCubit] Connecting to: ${_stream.url}');
       final channel = _stream.connect();
       await channel.ready;
-      print('[RealtimeCubit] Connected successfully!');
-      
+
       if (isClosed || session != _connectSession) {
         unawaited(channel.sink.close());
         return;
@@ -40,16 +38,13 @@ class RealtimeCubit extends Cubit<RealtimeState> {
           emit(state.copyWith(status: status, isConnected: true));
         },
         onError: (error) {
-          print('[RealtimeCubit] Stream error: $error');
           emit(state.copyWith(isConnected: false, error: error.toString()));
         },
         onDone: () {
-          print('[RealtimeCubit] Stream closed by server');
           emit(state.copyWith(isConnected: false));
         },
       );
     } catch (e) {
-      print('[RealtimeCubit] Connection failed: $e');
       if (isClosed || session != _connectSession) return;
       emit(state.copyWith(isConnected: false, error: e.toString()));
     }

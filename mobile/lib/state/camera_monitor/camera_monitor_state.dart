@@ -1,5 +1,5 @@
-import '../../../models/camera_info.dart';
-import '../../../models/realtime_status.dart';
+import '../../models/camera_info.dart';
+import '../../models/realtime_status.dart';
 
 class CameraMonitorState {
   const CameraMonitorState({

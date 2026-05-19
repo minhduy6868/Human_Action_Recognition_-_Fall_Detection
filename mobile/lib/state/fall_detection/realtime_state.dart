@@ -1,4 +1,4 @@
-import '../../../models/realtime_status.dart';
+import '../../models/realtime_status.dart';
 
 class RealtimeState {
   const RealtimeState({

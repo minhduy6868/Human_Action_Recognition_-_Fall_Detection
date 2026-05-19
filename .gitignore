@@ -1,1 +1,24 @@
 .github/
+# Ignore virtual environments and local env files
+.venv/
+venv/
+ENV/
+env/
+backend/.env
+
+# Ignore editor and tooling dirs
+.vscode/
+.claude/
+
+# Python caches
+**/__pycache__/
+
+# Dart/Flutter tool directories and build
+mobile/.dart_tool/
+mobile/build/
+
+# OS files
+.DS_Store
+
+# Logs
+*.log
