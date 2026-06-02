@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../../models/realtime_status.dart';
 import '../../services/realtime_stream.dart';
@@ -14,6 +15,7 @@ class CameraMonitorCubit extends Cubit<CameraMonitorState> {
   final RealtimeStream _stream;
   final SourcesApi _sourcesApi;
   StreamSubscription? _subscription;
+  WebSocketChannel? _channel;
   int _connectSession = 0;
 
   void initialize() {
@@ -26,42 +28,56 @@ class CameraMonitorCubit extends Cubit<CameraMonitorState> {
 
   Future<void> connect() async {
     final session = ++_connectSession;
-    await _subscription?.cancel();
-    _subscription = null;
+    await _disconnect();
 
     try {
       final channel = _stream.connect();
       await channel.ready;
       if (isClosed || session != _connectSession) {
-        unawaited(channel.sink.close());
+        await _closeChannel(channel);
         return;
       }
+
+      _channel = channel;
       emit(state.copyWith(isConnected: true, error: null));
 
       _subscription = channel.stream.listen(
         (message) {
-          final map = _stream.decodeMessage(message);
-          final status = RealtimeStatus.fromMap(map);
-          emit(state.copyWith(
-            status: status,
-            isConnected: true,
-            logs: _appendLog(state.logs, status),
-          ));
+          if (isClosed || session != _connectSession) return;
+          try {
+            final map = _stream.decodeMessage(message);
+            final status = RealtimeStatus.fromMap(map);
+            emit(state.copyWith(
+              status: status,
+              isConnected: true,
+              logs: _appendLog(state.logs, status),
+            ));
+          } catch (e) {
+            emit(state.copyWith(
+              isConnected: false,
+              error: e.toString(),
+            ));
+          }
         },
         onError: (error) {
+          if (isClosed || session != _connectSession) return;
           emit(state.copyWith(
             isConnected: false,
             error: error.toString(),
             logs: _appendSystemLog(
                 state.logs, 'WebSocket error: ${error.toString()}'),
           ));
+          unawaited(_disconnect());
         },
         onDone: () {
+          if (isClosed || session != _connectSession) return;
           emit(state.copyWith(
             isConnected: false,
             logs: _appendSystemLog(state.logs, 'Backend stream closed.'),
           ));
+          unawaited(_disconnect());
         },
+        cancelOnError: true,
       );
     } catch (e) {
       if (isClosed || session != _connectSession) return;
@@ -71,6 +87,23 @@ class CameraMonitorCubit extends Cubit<CameraMonitorState> {
         logs: _appendSystemLog(state.logs, 'Connect failed: $e'),
       ));
     }
+  }
+
+  Future<void> disconnect() => _disconnect();
+
+  Future<void> _disconnect() async {
+    await _subscription?.cancel();
+    _subscription = null;
+    final channel = _channel;
+    _channel = null;
+    await _closeChannel(channel);
+  }
+
+  Future<void> _closeChannel(WebSocketChannel? channel) async {
+    if (channel == null) return;
+    try {
+      await channel.sink.close();
+    } catch (_) {}
   }
 
   Future<void> loadSources() async {
@@ -139,10 +172,9 @@ class CameraMonitorCubit extends Cubit<CameraMonitorState> {
   }
 
   @override
-  Future<void> close() {
+  Future<void> close() async {
     _connectSession++;
-    _subscription?.cancel();
-    _subscription = null;
+    await _disconnect();
     return super.close();
   }
 }

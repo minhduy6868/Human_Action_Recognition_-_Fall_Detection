@@ -53,6 +53,13 @@ class AuthCubit extends Cubit<AuthState> {
     }
   }
 
+  Future<void> refreshProfile() async {
+    final user = await _authApi.me();
+    if (state.status == AuthStatus.authenticated) {
+      emit(AuthState.authenticated(user));
+    }
+  }
+
   Future<void> logout() async {
     emit(AuthState.loading());
     try {

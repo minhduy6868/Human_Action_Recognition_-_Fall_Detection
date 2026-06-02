@@ -260,12 +260,12 @@ class TelegramBotService:
         role = user.role.strip() if user.role else "user"
         plan = user.plan.strip() if user.plan else "free"
         return (
-            "Da lien ket thanh cong voi tai khoan nay.\n"
+            "Đã liên kết thành công, thông tin của bạn là:\n"
             f"- Name: {name}\n"
             f"- Email: {user.email}\n"
             f"- Role: {role}\n"
             f"- Plan: {plan}\n"
-            "Tu gio canh bao va du lieu se goi dung cho user nay."
+            "Từ giờ cảnh báo sẽ gửi tới tài khoản này."
         )
 
     def _build_profile_message(self, chat_id: str) -> str:
@@ -273,14 +273,14 @@ class TelegramBotService:
             subscriber = db.get(TelegramSubscriber, chat_id)
             if subscriber is None or not subscriber.user_id:
                 return (
-                    "Ban chua lien ket tai khoan nao.\n"
-                    "Gõ /start de bat dau lien ket bang email va mat khau."
+                    "Bạn chưa liên kết tài khoản nào.\n"
+                    "Gõ /start để bắt đầu liên kết tài khoản."
                 )
 
             user = db.get(User, subscriber.user_id)
             if user is None:
                 return (
-                    "Da tim thay Telegram nay trong he thong nhung user khong con ton tai.\n"
+                    "Đã tìm thấy telegram trong hệ thống nhưng không thể kết nối.\n"
                     "Gõ /unlink roi /start de lien ket lai."
                 )
 
@@ -288,7 +288,7 @@ class TelegramBotService:
             role = user.role.strip() if user.role else "user"
             plan = user.plan.strip() if user.plan else "free"
             return (
-                "Thong tin tai khoan dang lien ket:\n"
+                "Thông tin tài khoản đang liên kết:\n"
                 f"- Name: {name}\n"
                 f"- Email: {user.email}\n"
                 f"- Role: {role}\n"

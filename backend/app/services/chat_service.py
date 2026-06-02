@@ -18,12 +18,18 @@ DAY_WINDOW_MS = 24 * 60 * 60 * 1000
 
 
 class ChatService:
-    def answer(self, question: str, window_ms: int | None = None) -> ChatQueryResponse:
+    def answer(
+        self,
+        question: str,
+        window_ms: int | None = None,
+        insight_state=None,
+    ) -> ChatQueryResponse:
         normalized = question.strip().lower()
         now_ms = int(datetime.now().timestamp() * 1000)
         resolved_window_ms = self._resolve_window_ms(normalized, window_ms)
+        src = insight_state or state
         insight = ActivityInsightResponse(
-            **state.activity_insight(window_ms=resolved_window_ms, now_ms=now_ms)
+            **src.activity_insight(window_ms=resolved_window_ms, now_ms=now_ms)
         )
         intent = self._detect_intent(normalized)
         answer = self._answer_with_openrouter(question, intent, insight, now_ms)

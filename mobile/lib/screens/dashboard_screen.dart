@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:flutter_mjpeg/flutter_mjpeg.dart';
 import 'package:get_it/get_it.dart';
 import 'package:intl/intl.dart';
 
@@ -12,9 +11,12 @@ import '../shared_customization/localization/app_localizations.dart';
 import '../shared_customization/helpers/utilizations/storages.dart';
 import '../state/fall_detection/realtime_cubit.dart';
 import '../state/fall_detection/realtime_state.dart';
+import '../widgets/safe_mjpeg_view.dart';
 
 class DashboardScreen extends StatefulWidget {
-  const DashboardScreen({super.key});
+  const DashboardScreen({super.key, this.isActive = true});
+
+  final bool isActive;
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
@@ -109,10 +111,29 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void initState() {
     super.initState();
     _loadData();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
+    if (widget.isActive) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        context.read<RealtimeCubit>().connect();
+      });
+    }
+  }
+
+  @override
+  void didUpdateWidget(DashboardScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isActive == oldWidget.isActive) return;
+    if (widget.isActive) {
       context.read<RealtimeCubit>().connect();
-    });
+    } else {
+      context.read<RealtimeCubit>().disconnect();
+    }
+  }
+
+  @override
+  void dispose() {
+    context.read<RealtimeCubit>().disconnect();
+    super.dispose();
   }
 
   Future<void> _loadData() async {
@@ -313,16 +334,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ColoredBox(
                         color:
                             theme.colorScheme.surfaceVariant.withOpacity(0.18),
-                        child: Mjpeg(
-                          isLive: true,
-                          stream: streamUrl,
+                        child: SafeMjpegView(
+                          enabled: widget.isActive,
+                          streamUrl: streamUrl,
                           headers: headers,
-                          error: (context, error, stackTrace) {
-                            return _buildStreamPlaceholder(
-                                theme,
-                                AppLocalizations.of(context)
-                                    .translate('stream_unavailable'));
-                          },
+                          placeholder: _buildStreamPlaceholder(
+                            theme,
+                            AppLocalizations.of(context)
+                                .translate('stream_unavailable'),
+                          ),
                         ),
                       ),
                       Positioned(
@@ -888,20 +908,17 @@ class _FullscreenCameraView extends StatelessWidget {
                               ?.copyWith(color: Colors.white),
                         ),
                       )
-                    : Mjpeg(
-                        isLive: true,
-                        stream: streamUrl,
+                    : SafeMjpegView(
+                        streamUrl: streamUrl,
                         headers: _storage.authorizationHeaders,
-                        error: (context, error, stackTrace) {
-                          return Center(
-                            child: Text(
-                              AppLocalizations.of(context)
-                                  .translate('stream_unavailable'),
-                              style: theme.textTheme.titleMedium
-                                  ?.copyWith(color: Colors.white),
-                            ),
-                          );
-                        },
+                        placeholder: Center(
+                          child: Text(
+                            AppLocalizations.of(context)
+                                .translate('stream_unavailable'),
+                            style: theme.textTheme.titleMedium
+                                ?.copyWith(color: Colors.white),
+                          ),
+                        ),
                       ),
               ),
             ],

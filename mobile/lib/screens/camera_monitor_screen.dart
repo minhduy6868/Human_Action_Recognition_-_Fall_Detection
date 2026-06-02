@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:flutter_mjpeg/flutter_mjpeg.dart';
+import '../widgets/safe_mjpeg_view.dart';
 import 'package:get_it/get_it.dart';
 
 import '../core/backend_runtime_config.dart';
@@ -204,11 +204,10 @@ class _CameraMonitorScreenState extends State<CameraMonitorScreen> {
             child: Stack(
               fit: StackFit.expand,
               children: [
-                const ColoredBox(color: Color(0xFF101418)),
-                Mjpeg(
-                  isLive: true,
-                  stream: streamUrl,
+                SafeMjpegView(
+                  streamUrl: streamUrl,
                   headers: headers,
+                  placeholder: const ColoredBox(color: Color(0xFF101418)),
                 ),
                 Positioned(
                   left: 12,

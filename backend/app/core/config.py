@@ -51,6 +51,7 @@ class Settings(BaseSettings):
     action_stride_frames: int = 5
     action_smooth_window: int = 12
     action_min_confidence: float = 0.4
+    fall_ml_min_confidence: float = 0.9
     keypoint_visibility_threshold: float = 0.5
     fall_drop_threshold: float = 0.18
     fall_aspect_threshold: float = 1.2

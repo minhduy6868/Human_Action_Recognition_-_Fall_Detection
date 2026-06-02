@@ -7,6 +7,7 @@ import 'package:get_it/get_it.dart';
 import '../state/auth/auth_cubit.dart';
 import '../state/app_settings_cubit.dart';
 import '../services/push_notification_service.dart';
+import '../services/vip_upgrade_launcher.dart';
 import '../shared_customization/localization/app_localizations.dart';
 import './dashboard_screen.dart';
 import './analytics_screen.dart';
@@ -65,11 +66,11 @@ class _HomeShellState extends State<HomeShell> {
       ),
       body: IndexedStack(
         index: _selectedIndex,
-        children: const [
-          DashboardScreen(),
-          AnalyticsScreen(),
-          AiChatScreen(),
-          _SettingsPanel(),
+        children: [
+          DashboardScreen(isActive: _selectedIndex == 0),
+          const AnalyticsScreen(),
+          const AiChatScreen(),
+          const _SettingsPanel(),
         ],
       ),
     );
@@ -103,6 +104,21 @@ class _SettingsPanel extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
               children: [
                 _UserHeroCard(user: user),
+                if (user?.plan != 'vip') ...[
+                  const SizedBox(height: 12),
+                  Card(
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    child: ListTile(
+                      dense: true,
+                      leading: const Icon(Icons.workspace_premium_rounded, color: Color(0xFF1FBF9B)),
+                      title: Text(loc.translate('upgrade_vip_short')),
+                      subtitle: Text(loc.translate('upgrade_vip_via')),
+                      trailing: const Icon(Icons.telegram, color: Color(0xFF229ED9)),
+                      onTap: () => VipUpgradeLauncher.openTelegramUpgrade(context),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 16),
                 Card(
                   elevation: 0,
@@ -260,7 +276,6 @@ class _UserHeroCard extends StatelessWidget {
     final theme = Theme.of(context);
     final name = user?.name?.toString().isNotEmpty == true ? user.name.toString() : 'Guest';
     final email = user?.email?.toString() ?? 'No email';
-    final role = user?.role?.toString() ?? 'user';
     final plan = user?.plan?.toString() ?? 'free';
 
     return Card(
@@ -300,7 +315,6 @@ class _UserHeroCard extends StatelessWidget {
                     spacing: 8,
                     runSpacing: 8,
                     children: [
-                      _UserPill(label: role.toUpperCase(), color: Colors.white),
                       _UserPill(label: plan.toUpperCase(), color: const Color(0xFF1FBF9B)),
                     ],
                   ),

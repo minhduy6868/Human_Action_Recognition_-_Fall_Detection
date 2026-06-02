@@ -92,5 +92,16 @@ class StreamManager:
     def list(self) -> list[StreamSession]:
         return list(self._sessions.values())
 
+    def get_state_for_user(self, user_id: str, source_id: str | None = None) -> RealtimeState | None:
+        if source_id:
+            session = self.get(source_id)
+            if session and session.user_id == user_id:
+                return session.state
+
+        for session in self._sessions.values():
+            if session.user_id == user_id:
+                return session.state
+        return None
+
 
 stream_manager = StreamManager()

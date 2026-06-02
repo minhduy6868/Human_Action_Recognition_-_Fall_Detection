@@ -4,6 +4,7 @@ import 'core/backend_runtime_config.dart';
 import 'state/camera_monitor/camera_monitor_cubit.dart';
 import 'state/fall_detection/realtime_cubit.dart';
 import 'services/api_client.dart';
+import 'services/admin_api.dart';
 import 'services/auth_api.dart';
 import 'services/camera_api.dart';
 import 'services/push_notification_service.dart';
@@ -38,6 +39,7 @@ Future<void> initGetItDependencies() async {
   getIt.registerSingleton<CameraApi>(CameraApi(getIt<ApiClient>()));
   getIt.registerSingleton<SourcesApi>(SourcesApi(getIt<ApiClient>()));
   getIt.registerSingleton<MonitoringApi>(MonitoringApi(getIt<ApiClient>()));
+  getIt.registerSingleton<AdminApi>(AdminApi(getIt<ApiClient>()));
 
   // App Settings Cubit for theme and language
   final settingsCubit = AppSettingsCubit(storage);

@@ -44,33 +44,100 @@ def _detect_ngrok_local_api(timeout: float = 1.0) -> Optional[str]:
     return None
 
 
+def _delete_existing_ngrok_tunnels(timeout: float = 1.5) -> None:
+    """Best-effort delete all existing local ngrok tunnels.
+
+    This helps force a new public URL on each backend startup.
+    """
+    try:
+        with httpx.Client(timeout=timeout) as client:
+            r = client.get('http://127.0.0.1:4040/api/tunnels')
+            if r.status_code != 200:
+                return
+            data = r.json()
+            tunnels = data.get('tunnels') or []
+            for tunnel in tunnels:
+                uri = tunnel.get('uri')  # e.g. /api/tunnels/command_line
+                if not uri:
+                    continue
+                try:
+                    client.delete(f'http://127.0.0.1:4040{uri}')
+                except Exception:
+                    logger.debug('Failed deleting tunnel %s', uri, exc_info=True)
+    except Exception:
+        logger.debug('No local ngrok API for tunnel cleanup', exc_info=True)
+
+
+def _start_new_ngrok_tunnel(settings) -> Optional[str]:
+    try:
+        from pyngrok import conf, ngrok
+
+        if getattr(settings, 'ngrok_authtoken', ''):
+            try:
+                conf.get_default().auth_token = settings.ngrok_authtoken
+            except Exception:
+                logger.debug('Failed to apply ngrok_authtoken from settings', exc_info=True)
+
+        # Force new URL each backend startup:
+        # 1) clear old tunnels from local ngrok API
+        # 2) open a fresh tunnel
+        _delete_existing_ngrok_tunnels()
+        tunnel = ngrok.connect(8000, bind_tls=True)
+        public_url = tunnel.public_url if hasattr(tunnel, 'public_url') else str(tunnel)
+        if public_url:
+            return public_url
+    except Exception:
+        logger.debug('Failed starting fresh ngrok tunnel', exc_info=True)
+    return None
+
+
 def _pick_public_url(settings) -> Optional[str]:
     # Priority: explicit env/config -> ngrok local API -> None
     if settings.ngrok_public_url:
         return settings.ngrok_public_url.strip()
+    if getattr(settings, 'enable_auto_ngrok', False):
+        started = _start_new_ngrok_tunnel(settings)
+        if started:
+            return started
     local = _detect_ngrok_local_api()
     if local:
         return local
 
-    # If configured, attempt to start ngrok automatically and re-check
-    if getattr(settings, 'enable_auto_ngrok', False):
-        try:
-            from pyngrok import ngrok, conf
-
-            if getattr(settings, 'ngrok_authtoken', ''):
-                try:
-                    conf.get_default().auth_token = settings.ngrok_authtoken
-                except Exception:
-                    pass
-
-            # start a tunnel to port 8000 (http)
-            t = ngrok.connect(8000, bind_tls=True)
-            public_url = t.public_url if hasattr(t, 'public_url') else str(t)
-            if public_url:
-                return public_url
-        except Exception as exc:
-            logger.debug('auto-start ngrok failed: %s', exc)
     return None
+
+
+def _is_ngrok_url_usable(public_url: str, timeout: float = 2.5) -> bool:
+    """Check whether ngrok public URL is reachable and not quota-blocked.
+
+    ngrok quota errors often return a 4xx/5xx page containing messages like
+    "network bandwidth limit" or "has reached its limit".
+    """
+    if not public_url or "ngrok" not in public_url:
+        return True
+    test_url = public_url.rstrip("/") + "/health"
+    try:
+        with httpx.Client(timeout=timeout, follow_redirects=True) as client:
+            r = client.get(test_url)
+            body = (r.text or "").lower()
+            if 200 <= r.status_code < 300:
+                return True
+            if (
+                "network bandwidth limit" in body
+                or "has reached its limit" in body
+                or "traffic limit" in body
+                or "payment required" in body
+            ):
+                logger.warning("ngrok appears quota-blocked at %s", test_url)
+                return False
+    except Exception as exc:
+        # During app startup, backend may not be ready yet behind tunnel.
+        # Do not force LAN fallback on transient probe failures.
+        logger.info("ngrok health probe transient failure (%s): %s", test_url, exc)
+        return True
+
+    # Non-2xx without explicit quota markers can happen transiently (warmup/502).
+    # Keep ngrok as primary and let clients retry/fallback if needed.
+    return True
 
 
 def publish_ngrok_to_rtdb() -> None:
@@ -84,23 +151,16 @@ def publish_ngrok_to_rtdb() -> None:
         logger.debug('Empty firebase_rtdb_url; skipping')
         return
 
-    # Determine public URL: prefer ngrok/local API, then explicit ngrok_public_url, then local LAN IP
+    # Determine public URL: ngrok only.
     public = _pick_public_url(settings)
+    if public and not _is_ngrok_url_usable(public):
+        logger.warning(
+            "ngrok URL is not usable (likely quota/limit). Skip RTDB publish and let clients use LAN fallback."
+        )
+        public = None
     if not public:
-        # fallback: try to compute local LAN IP
-        try:
-            import socket
-
-            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            # doesn't need to be reachable
-            s.connect(('8.8.8.8', 80))
-            local_ip = s.getsockname()[0]
-            s.close()
-            public = f'http://{local_ip}:8000'
-            logger.info('Falling back to local IP for public url: %s', public)
-        except Exception:
-            public = 'http://127.0.0.1:8000'
-            logger.info('Falling back to loopback for public url: %s', public)
+        logger.warning('No usable ngrok URL. Skipping RTDB publish for backend endpoint config.')
+        return
 
     # Ensure public ends without slash
     public = public.rstrip('/')

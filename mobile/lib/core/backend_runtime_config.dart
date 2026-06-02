@@ -12,9 +12,12 @@ class BackendRuntimeConfig {
     required this.mjpegUrl,
   });
 
+  // Backend publishes runtime endpoint config to /backend.json.
+  // Reading root /.json may pick stale/irrelevant keys and cause wrong URL usage.
   static const String defaultConfigSourceUrl =
-      'https://love-app-19405-default-rtdb.asia-southeast1.firebasedatabase.app/.json';
+      'https://love-app-19405-default-rtdb.asia-southeast1.firebasedatabase.app/backend.json';
   static const Duration configFetchTimeout = Duration(seconds: 3);
+  static const Duration healthCheckTimeout = Duration(seconds: 2);
 
   final String apiBaseUrl;
   final String wsUrl;
@@ -42,7 +45,12 @@ class BackendRuntimeConfig {
 
       final values = <String, String>{};
       _collectStringValues(decoded, values);
-      return BackendRuntimeConfig.fromValues(values);
+      final runtimeConfig = BackendRuntimeConfig.fromValues(values);
+
+      if (await runtimeConfig._isReachable()) {
+        return runtimeConfig;
+      }
+      return fallback();
     } catch (_) {
       return fallback();
     }
@@ -97,6 +105,17 @@ class BackendRuntimeConfig {
     return '$apiBaseUrl/streams/$sourceId/mjpeg';
   }
 
+  Future<bool> _isReachable() async {
+    try {
+      final response = await http
+          .get(Uri.parse('$apiBaseUrl/health'))
+          .timeout(healthCheckTimeout);
+      return response.statusCode >= 200 && response.statusCode < 300;
+    } catch (_) {
+      return false;
+    }
+  }
+
   static void _collectStringValues(
     dynamic value,
     Map<String, String> output,
@@ -108,10 +127,12 @@ class BackendRuntimeConfig {
         if (child is String) {
           final trimmed = child.trim();
           if (trimmed.isNotEmpty) {
-            output.putIfAbsent(key, () => trimmed);
+            // Keep the latest discovered value (override older one) so refreshed
+            // backend runtime config wins when keys appear multiple times.
+            output[key] = trimmed;
           }
         } else if (child is num || child is bool) {
-          output.putIfAbsent(key, () => child.toString());
+          output[key] = child.toString();
         } else {
           _collectStringValues(child, output);
         }

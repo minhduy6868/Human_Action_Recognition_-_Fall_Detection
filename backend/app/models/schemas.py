@@ -211,6 +211,12 @@ class UserProfile(BaseModel):
     created_at: datetime | None = None
 
 
+class AdminUserUpdate(BaseModel):
+    name: str | None = None
+    role: str | None = None
+    plan: str | None = None
+
+
 class SourceCreate(BaseModel):
     name: str
     source_type: str
