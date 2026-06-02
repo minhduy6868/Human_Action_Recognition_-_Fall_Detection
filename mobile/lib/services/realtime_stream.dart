@@ -12,6 +12,9 @@ class RealtimeStream {
   }
 
   Map<String, dynamic> decodeMessage(dynamic message) {
+    if (message is List<int>) {
+      return jsonDecode(utf8.decode(message)) as Map<String, dynamic>;
+    }
     return jsonDecode(message as String) as Map<String, dynamic>;
   }
 }

@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:flutter_mjpeg/flutter_mjpeg.dart';
+import '../widgets/safe_mjpeg_view.dart';
+import 'package:get_it/get_it.dart';
 
-import '../core/app_config.dart';
+import '../core/backend_runtime_config.dart';
+import '../shared_customization/helpers/utilizations/storages.dart';
+import '../shared_customization/localization/app_localizations.dart';
 import '../state/camera_monitor/camera_monitor_cubit.dart';
 import '../state/camera_monitor/camera_monitor_state.dart';
 import '../widgets/fall_detection/connection_status.dart';
@@ -15,6 +18,9 @@ class CameraMonitorScreen extends StatefulWidget {
 }
 
 class _CameraMonitorScreenState extends State<CameraMonitorScreen> {
+  final _storage = GetIt.instance<CustomSharedPreferences>();
+  final _backendConfig = GetIt.instance<BackendRuntimeConfig>();
+
   @override
   void initState() {
     super.initState();
@@ -46,7 +52,7 @@ class _CameraMonitorScreenState extends State<CameraMonitorScreen> {
           ),
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: () => context.read<CameraMonitorCubit>().loadCameras(),
+            onPressed: () => context.read<CameraMonitorCubit>().loadSources(),
           ),
           IconButton(
             icon: const Icon(Icons.settings_input_antenna),
@@ -69,6 +75,8 @@ class _CameraMonitorScreenState extends State<CameraMonitorScreen> {
                       const SizedBox(height: 16),
                       _buildStreamCard(context, state),
                       const SizedBox(height: 16),
+                      _buildSourceSelector(context, state),
+                      const SizedBox(height: 16),
                       _buildActionFrame(context, state),
                       const SizedBox(height: 16),
                       _buildLogPanel(context, state),
@@ -84,8 +92,9 @@ class _CameraMonitorScreenState extends State<CameraMonitorScreen> {
   }
 
   Widget _buildHeader(BuildContext context, CameraMonitorState state) {
+    final loc = AppLocalizations.of(context);
     final chipColor = state.isConnected ? const Color(0xFF1FBF9B) : const Color(0xFFF1A53A);
-    final chipText = state.isConnected ? 'Live backend' : 'Reconnecting';
+    final chipText = state.isConnected ? loc.translate('connected') : loc.translate('reconnecting');
 
     return Card(
       elevation: 0,
@@ -119,8 +128,8 @@ class _CameraMonitorScreenState extends State<CameraMonitorScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'Live stream intelligence',
+                  Text(
+                    loc.translate('live'),
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 22,
@@ -129,7 +138,7 @@ class _CameraMonitorScreenState extends State<CameraMonitorScreen> {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'Realtime video, action status, and fall alerts',
+                    loc.translate('status'),
                     style: TextStyle(
                       color: Colors.white.withOpacity(0.88),
                       fontSize: 13,
@@ -141,7 +150,7 @@ class _CameraMonitorScreenState extends State<CameraMonitorScreen> {
                     runSpacing: 8,
                     children: [
                       _HeaderChip(label: chipText, color: chipColor),
-                      const _HeaderChip(label: 'Stream ready', color: Colors.white),
+                      _HeaderChip(label: loc.translate('live'), color: Colors.white),
                     ],
                   ),
                 ],
@@ -154,6 +163,10 @@ class _CameraMonitorScreenState extends State<CameraMonitorScreen> {
   }
 
   Widget _buildStreamCard(BuildContext context, CameraMonitorState state) {
+    final source = state.selectedSource;
+    final streamUrl = source == null ? '' : _backendConfig.sourceMjpegUrl(source.id);
+    final headers = _storage.authorizationHeaders;
+
     return Card(
       elevation: 0,
       clipBehavior: Clip.antiAlias,
@@ -170,7 +183,7 @@ class _CameraMonitorScreenState extends State<CameraMonitorScreen> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'Camera feed',
+                    source == null ? 'Camera feed' : source.name,
                     style: Theme.of(context).textTheme.titleSmall?.copyWith(
                           fontWeight: FontWeight.w700,
                         ),
@@ -191,16 +204,16 @@ class _CameraMonitorScreenState extends State<CameraMonitorScreen> {
             child: Stack(
               fit: StackFit.expand,
               children: [
-                const ColoredBox(color: Color(0xFF101418)),
-                Mjpeg(
-                  isLive: true,
-                  stream: AppConfig.mjpegUrl,
+                SafeMjpegView(
+                  streamUrl: streamUrl,
+                  headers: headers,
+                  placeholder: const ColoredBox(color: Color(0xFF101418)),
                 ),
                 Positioned(
                   left: 12,
                   top: 12,
                   child: _StreamBadge(
-                    label: AppConfig.mjpegUrl,
+                    label: source == null ? 'Select a source' : source.name,
                     icon: Icons.stream,
                   ),
                 ),
@@ -228,7 +241,64 @@ class _CameraMonitorScreenState extends State<CameraMonitorScreen> {
     );
   }
 
+  Widget _buildSourceSelector(BuildContext context, CameraMonitorState state) {
+    return Card(
+      elevation: 0,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.source_rounded, size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Your source',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
+                ),
+                if (state.isLoadingSources)
+                  const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (state.sources.isEmpty)
+              Text(
+                'No source configured for this account.',
+                style: Theme.of(context).textTheme.bodyMedium,
+              )
+            else
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: List.generate(state.sources.length, (index) {
+                  final source = state.sources[index];
+                  final selected = index == state.selectedIndex;
+                  return ChoiceChip(
+                    selected: selected,
+                    label: Text(source.name.isEmpty ? 'Source ${index + 1}' : source.name),
+                    onSelected: (_) => context.read<CameraMonitorCubit>().selectSource(index),
+                  );
+                }),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildActionFrame(BuildContext context, CameraMonitorState state) {
+    final loc = AppLocalizations.of(context);
     final status = state.status;
     final actionColor = _actionColor(status.action);
     final timestamp = status.timestampMs > 0
@@ -271,15 +341,15 @@ class _CameraMonitorScreenState extends State<CameraMonitorScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'Action snapshot',
+                      Text(
+                        loc.translate('action'),
                         style: TextStyle(
                           color: Colors.white70,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
                       Text(
-                        status.action.toUpperCase(),
+                        loc.actionLabelUpper(status.action),
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 24,
@@ -298,8 +368,8 @@ class _CameraMonitorScreenState extends State<CameraMonitorScreen> {
                       borderRadius: BorderRadius.circular(999),
                       border: Border.all(color: Colors.white.withOpacity(0.9)),
                     ),
-                    child: const Text(
-                      'FALL',
+                    child: Text(
+                      loc.translate('fall_detected').toUpperCase(),
                       style: TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.bold,
@@ -352,7 +422,7 @@ class _CameraMonitorScreenState extends State<CameraMonitorScreen> {
             ),
             const SizedBox(height: 12),
             _InfoRow(
-              label: 'Fall confidence',
+              label: loc.translate('confidence'),
               value: '${(status.fallConfidence * 100).toStringAsFixed(1)}%',
             ),
             const SizedBox(height: 12),
@@ -362,7 +432,7 @@ class _CameraMonitorScreenState extends State<CameraMonitorScreen> {
             ),
             const SizedBox(height: 12),
             _InfoRow(
-              label: 'Updated',
+              label: loc.translate('status'),
               value: _formatTimestamp(timestamp),
             ),
           ],
@@ -372,6 +442,7 @@ class _CameraMonitorScreenState extends State<CameraMonitorScreen> {
   }
 
   Widget _buildLogPanel(BuildContext context, CameraMonitorState state) {
+    final loc = AppLocalizations.of(context);
     return Card(
       elevation: 0,
       clipBehavior: Clip.antiAlias,
@@ -386,7 +457,7 @@ class _CameraMonitorScreenState extends State<CameraMonitorScreen> {
                 const Icon(Icons.receipt_long, size: 18),
                 const SizedBox(width: 8),
                 Text(
-                  'Realtime Logs',
+                  '${loc.translate('status')} Logs',
                   style: Theme.of(context).textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w700,
                       ),
@@ -414,7 +485,7 @@ class _CameraMonitorScreenState extends State<CameraMonitorScreen> {
               child: state.logs.isEmpty
                   ? Center(
                       child: Text(
-                        'Waiting for realtime events...',
+                        loc.translate('waiting'),
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                               color: Colors.grey[600],
                             ),

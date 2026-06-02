@@ -13,16 +13,258 @@ A realtime AI system that captures video, detects human poses, recognizes action
 - AI: pose estimation + action detection + fall detection + event reasoning
 - Mobile: Flutter client (realtime + REST)
 
+---
+
+## Complete Feature Inventory (Code-Verified)
+
+This section is a full feature list extracted from the current codebase.
+
+### Backend Features
+
+- **Authentication and account**
+  - Email/password login, register, refresh token, logout.
+  - Google Sign-In (`/auth/google`).
+  - Profile endpoint (`/auth/me`).
+  - OTP flow: request OTP, verify OTP, reset password.
+  - JWT access token + refresh token with revoke support.
+- **Push device tokens**
+  - Register/remove FCM device tokens per user/source.
+  - Device token activity tracking in database.
+- **Source management (per user)**
+  - Create/list/get/update/delete source connections.
+  - Activate source endpoint.
+  - Free plan enforcement: max 1 source and single active source.
+  - Stream session start/stop tied to source activation.
+- **Realtime monitoring APIs**
+  - Status, people, objects, history, alerts, fall events, reports.
+  - Action summary, insights, logs, log details.
+  - Chat query and summary query over selected time windows.
+  - Stream endpoints: list streams, stream status, MJPEG feed by source.
+  - WebSockets: status stream, fall-alerts stream, alerts stream.
+- **Admin APIs**
+  - Dashboard stats (`total/free/vip/admin users`, total sources).
+  - List/filter users by query/plan/role.
+  - Get user detail and user source list.
+  - Update user fields (`name`, `role`, `plan`).
+  - Delete user account with related cleanup safeguards.
+  - Plan catalog endpoint for client display.
+- **AI and event pipeline**
+  - YOLO object tracking (people + objects).
+  - YOLO pose estimation per detected person.
+  - Action recognition (rule-based or LSTM model).
+  - Fall detection (rule-based detector or XGBoost model).
+  - Action smoothing and temporal sequence buffering.
+  - Event reasoning (loitering, crowding, suspicious movement, abandoned object).
+  - Optional clothing color detection and person identity feature extraction.
+- **Persistence and analytics**
+  - Realtime logs stored to `detection_logs`.
+  - Chat history storage and plan-based AI quota checks.
+  - Alerts/reports in memory + database-backed logs endpoints.
+- **Notifications**
+  - Telegram bot polling/integration.
+  - FCM push integration.
+  - Email/Cloudinary hooks (with config-based graceful skip).
+- **Runtime and infrastructure**
+  - Startup initializes DB, seeds admin account, starts active sources.
+  - Request ID middleware and standardized API envelope (`data/meta`, `error/meta`).
+  - Ngrok and Firebase RTDB config publishing support.
+
+### Mobile Features (User App)
+
+- **Auth UX**
+  - Login, register, forgot password, reset password, Google login.
+  - Persistent auth bootstrap with token refresh.
+- **Role-based entry**
+  - Normal user -> Home shell (Dashboard, Analytics, AI, Settings).
+  - Admin user -> Admin shell (separate flow).
+- **Dashboard and monitoring**
+  - Live MJPEG feed by active source.
+  - Realtime status badges and action/fall snapshots.
+  - Source picker and source activation shortcuts.
+  - Timeline cards from history/reports/logs APIs.
+- **Monitoring screens**
+  - Sources management, history list, logs, reports.
+  - Camera monitor screen.
+  - Fall detection screen.
+- **AI assistant**
+  - Chat query UI backed by `/chat/query` and chat history endpoints.
+- **Settings**
+  - Theme toggle (dark/light).
+  - Language switch (vi/en localization).
+  - User plan badge.
+  - VIP upgrade CTA in settings (Telegram redirect to `@Codebox88`).
+  - Logout flow with best-effort stream stop.
+- **Notifications**
+  - Firebase Messaging initialization.
+  - Device token registration/removal against backend auth APIs.
+
+### Mobile Features (Admin App)
+
+- **Admin shell**
+  - Dedicated admin-only tabs: Overview + Users.
+- **Overview tab**
+  - Stats cards from admin stats endpoint.
+- **Users tab**
+  - Search and filter users by plan/role.
+  - Quick actions: set VIP, set Free, edit, delete.
+  - Edit sheet: name/role/plan updates.
+  - View top user sources and active source status.
+
+### Realtime Data Scope
+
+- Realtime is maintained per stream session (`source_id`, `user_id`) through `StreamManager`.
+- Source-specific endpoints (`/streams/{id}/status`, `/streams/{id}/mjpeg`) read session state directly.
+- Generic monitoring endpoints resolve state from current user's active session.
+
+### Main Plans and Access Rules
+
+- **Free plan**
+  - Single source limit and single active source behavior.
+  - Daily AI query cap enforced server-side.
+- **VIP plan**
+  - No free-plan source limit and no free-plan AI quota cap.
+- **Admin role**
+  - Separate app flow and privileged admin APIs.
+
 ## System Flow
 
-1. Capture frames from RTSP/webcam/file
-2. Detect people + objects (YOLO)
-3. Pose estimation per person
-4. Action recognition (sequence + smoothing)
-5. Fall detection (rule-based or ML fallback)
-6. Event reasoning (crowd/loiter/abandoned)
-7. Persist logs + alerts to Postgres
-8. Stream realtime via WebSocket + MJPEG
+1. User source is activated (`/sources` + `is_active=true`)
+2. `StreamManager` creates a per-source/per-user stream session
+3. Capture frames from RTSP/webcam/file
+4. Detect people + objects (YOLO tracking)
+5. Pose estimation per person
+6. Action recognition (rule-based or LSTM model)
+7. Fall detection (rule-based detector or XGBoost model)
+8. Event reasoning (crowd/loiter/abandoned)
+9. Persist logs + alerts to Postgres
+10. Stream realtime via WebSocket + MJPEG + REST
+
+---
+
+## Full End-to-End Flow (Detailed)
+
+This is the full execution flow from app launch to AI results, including all major branches.
+
+### 1) Application Startup
+
+1. Backend process starts (`app.main:app`).
+2. Startup hooks run:
+   - initialize DB schema
+   - seed admin account if enabled
+   - publish runtime config (ngrok/RTDB when enabled)
+   - start Telegram bot poller
+   - load all `is_active=true` sources from DB and auto-start sessions in `StreamManager`
+3. Mobile app starts and initializes:
+   - dependency injection (`GetIt`)
+   - backend runtime config fetch (Firebase RTDB fallback to static config)
+   - auth bootstrap (refresh token, get `/auth/me`)
+4. Role-based routing:
+   - `role=admin` -> admin shell
+   - normal user -> home shell
+
+### 2) Authentication + Session Lifecycle
+
+1. Login/register/google -> backend issues access + refresh token.
+2. Mobile stores tokens and attaches `Authorization: Bearer`.
+3. Access token expiry -> `/auth/refresh` rotates token.
+4. Logout:
+   - revoke refresh token
+   - unregister push token (best effort)
+   - stop active source streams (best effort from app side)
+   - clear local tokens
+
+### 3) Source Management + Plan Enforcement
+
+1. User creates or updates source (`file`, `rtsp`, `http_mjpeg`, `mjpeg`, `webcam`).
+2. Backend validates ownership and plan:
+   - free plan -> max one stored source and one active source
+   - if exceeding limit -> `402 PLAN_LIMIT_REACHED`
+3. When source is activated:
+   - free plan: deactivate/stop other sources first
+   - start stream session via `StreamManager.start(...)`
+4. `StreamManager` builds source-specific settings and creates:
+   - `StreamService` instance (processing thread)
+   - `RealtimeState` instance (session state)
+
+### 4) Realtime Frame Processing Pipeline (per source session)
+
+For each processed frame in `StreamService._run()`:
+
+1. Read frame from configured source.
+2. Apply frame skipping (fixed or adaptive).
+3. Detect and track objects (`yolo11n.pt`) -> `objects[]`.
+4. Filter person detections and run pose extraction (`yolo11s-pose.pt`).
+5. Build/update per-track sequence buffers.
+6. Infer action:
+   - rule mode (`classify_action`) OR
+   - ML mode (`ActionModel` LSTM)
+7. Smooth action over recent history.
+8. Infer fall:
+   - rule mode (`FallDetector`) OR
+   - ML mode (`FallModel` XGBoost from `fall_xgb.json`)
+9. Build `RealtimeStatus` payload:
+   - primary action/fall
+   - per-person action/fall/bbox/clothing
+   - detected objects
+10. Update session `RealtimeState`.
+11. Persist row to `detection_logs`.
+12. Generate alerts/reports/event-reasoning outputs.
+13. Encode latest annotated MJPEG frame for stream endpoints.
+
+### 5) Realtime Data Delivery to Mobile
+
+Mobile consumes three realtime channels:
+
+1. **WebSocket status** (`/api/v1/ws`)
+   - backend ensures active sources are running for that user
+   - sends latest session status at configured interval
+2. **MJPEG stream** (`/api/v1/streams/{source_id}/mjpeg`)
+   - delivers annotated JPEG stream per source
+3. **REST snapshots/history**
+   - `/status`, `/history`, `/alerts`, `/fall-events`, `/reports`
+   - `/streams/{source_id}/status`
+   - all resolved against current user's active session/state
+
+### 6) Analytics, Logs, and AI Query Flow
+
+1. Logs endpoint reads from Postgres (`detection_logs`) filtered to current user.
+2. History/status endpoints read session realtime state.
+3. AI query (`/chat/query`):
+   - enforce plan quota (free daily cap)
+   - build insight from user session state
+   - generate response (OpenRouter if configured, fallback local summary)
+   - persist chat history
+4. Summary range query (`/summary/query`):
+   - resolves allowed user source IDs
+   - aggregates from DB logs by time window
+   - optional natural-language answer
+
+### 7) Notifications Flow
+
+1. Fall/event alerts are produced from realtime status transitions.
+2. Notification service tries channels by configuration:
+   - Telegram
+   - FCM push
+   - Email/Cloudinary hooks
+3. Missing config is handled gracefully (warn and skip, no crash).
+
+### 8) Admin Flow
+
+1. Admin logs in and lands on dedicated admin shell.
+2. Overview tab loads `/admin/stats`.
+3. Users tab supports:
+   - search + filter by plan/role
+   - quick set VIP/free
+   - edit name/role/plan
+   - inspect user sources
+   - delete user (with guard against deleting self)
+
+### 9) VIP Upgrade Flow (Current Product Behavior)
+
+1. Free user sees upgrade CTA in Settings.
+2. Tap CTA opens Telegram to `@Codebox88`.
+3. Admin updates target account plan to `vip`.
+4. User refreshes profile/re-login to receive updated plan permissions.
 
 ---
 
@@ -52,6 +294,29 @@ A realtime AI system that captures video, detects human poses, recognizes action
   - Optional ML fallback using XGBoost (config: `USE_ML_FALL=true`, `FALL_MODEL_PATH=...`).
 - **Event Reasoning**: Crowd, loitering, suspicious movement, abandoned object rules.
 - **Auxiliary**: Clothing color detection + simple person identification by visual features.
+
+### Action/Fall Inference Modes
+
+- **Action mode A (default, rule-based)**: `USE_ML_ACTION=false`
+  - Uses pose geometry + motion heuristics (`classify_action`).
+- **Action mode B (ML model)**: `USE_ML_ACTION=true`
+  - Uses sequence model from `ACTION_MODEL_PATH` (`models/action_lstm.pt` by default).
+- **Fall mode A (default, rule-based)**: `USE_ML_FALL=false`
+  - Uses temporal fall rules (`FallDetector`: drop + lying confirmation).
+- **Fall mode B (your ML model)**: `USE_ML_FALL=true`
+  - Uses XGBoost model from `FALL_MODEL_PATH` (`models/fall_xgb.json` by default).
+
+Notes:
+- ML action/fall modes need enough sequence frames (`ACTION_WINDOW_FRAMES`, default 30).
+- If ML dependencies/model files are missing, backend gracefully falls back to rule-based behavior.
+
+### Realtime State Scope (Important)
+
+- Realtime state is maintained **per stream session** (source + user), not only global process state.
+- App should prefer source-aware endpoints when possible:
+  - `/api/v1/streams/{source_id}/status`
+  - `/api/v1/streams/{source_id}/mjpeg`
+- Generic endpoints (`/status`, `/history`, `/reports`, `/alerts`, `/fall-events`, `/ws`) resolve state from the current user's active session.
 
 ### Realtime Decision Logic
 
@@ -91,7 +356,7 @@ Retention:
 - `detection_logs` cleanup by `LOG_RETENTION_DAYS`
 - `chat_history` cleanup by `CHAT_HISTORY_RETENTION_DAYS`
 
-## 🎯 Key Features (Updated 2026-05-14)
+## 🎯 Key Features (Updated 2026-06-02)
 
 - **Multi-person Detection**: Track multiple people simultaneously with individual actions
 - **6 Action Types**: Standing, Walking, Running, Sitting, Crouching, Lying
@@ -101,6 +366,9 @@ Retention:
 - **Fall Detection**: Real-time fall detection with confidence scoring
 - **Enhanced Performance**: 18-20 FPS processing, 15 FPS MJPEG streaming
 - **WebSocket Updates**: Real-time status updates every 250ms
+- **Admin Console (Mobile)**: Dedicated admin shell with stats + user management
+- **VIP Management**: Admin can change plan (`free`/`vip`) directly in app
+- **VIP Upgrade CTA**: User upgrade flow from Settings via Telegram (`@Codebox88`)
 
 ---
 
@@ -138,6 +406,7 @@ CAMERA_SOURCE=file
 VIDEO_FILE_PATH=d:/flutter/video-ai-detect/backend/fall5.mp4
 LOOP_VIDEO_FILE=true
 ENABLE_STREAM=true
+GOOGLE_CLIENT_ID=your-google-oauth-client-id.apps.googleusercontent.com
 ```
 
 To use a different video or camera:
@@ -152,7 +421,7 @@ To use a different video or camera:
 
 ```powershell
 cd backend
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+..\.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
 **Expected Output:**
@@ -198,6 +467,10 @@ INFO:     Uvicorn running on http://0.0.0.0:8000
 | `/api/v1/streams/stop` | POST | Stop stream by source |
 | `/api/v1/streams` | GET | Active streams |
 | `/api/v1/streams/{id}/status` | GET | Stream status |
+| `/api/v1/admin/stats` | GET | Admin dashboard stats |
+| `/api/v1/admin/users` | GET | Admin list/filter users |
+| `/api/v1/admin/users/{id}` | PATCH/DELETE | Admin update/delete user |
+| `/api/v1/admin/users/{id}/sources` | GET | Admin view user sources |
 | `/api/v1/stream/mjpeg` | GET | MJPEG (default) |
 | `/api/v1/streams/{id}/mjpeg` | GET | MJPEG by source |
 | `/api/v1/ws` | WS | Realtime stream |
@@ -223,6 +496,8 @@ ipconfig | findstr /i "IPv4"
 The app is pre-configured to connect to `192.168.1.11:8000`. If your IP is different, update:
 
 **File**: `mobile/lib/core/app_config.dart`
+
+Also set `GOOGLE_SERVER_CLIENT_ID` in your Flutter build/run config to the web OAuth client ID that matches the Google Sign-In setup.
 
 ```dart
 switch (defaultTargetPlatform) {
@@ -253,6 +528,56 @@ Select your device when prompted. The app will:
 
 ---
 
+## 🔔 Notifications Setup
+
+### Telegram fall alerts with image
+
+The backend can send fall alerts to Telegram using the bot token you created with BotFather. The backend now polls Telegram automatically when it starts, so the bot runs together with the backend process. When a frame image is available, it sends the snapshot as a photo.
+
+Set these values in `backend/.env`:
+
+```env
+ENABLE_TELEGRAM_NOTIFICATIONS=true
+TELEGRAM_BOT_TOKEN=your_bot_token_here
+TELEGRAM_CHAT_IDS=123456789,@your_channel_or_group
+```
+
+Notes:
+- Use a comma-separated list for multiple chat IDs.
+- `TELEGRAM_CHAT_IDS` can contain numeric user/chat IDs or channel/group usernames.
+- Keep the bot token out of source control and rotate it if it was shared publicly.
+- Each Telegram user must open the bot and press `/start` once so the backend can receive and store their chat ID automatically.
+- The backend keeps Telegram subscribers in the `telegram_subscribers` table and will send alerts to every active subscriber.
+- If you want to inspect the currently stored chat IDs, you can still run `python backend/scripts/telegram_chat_ids.py` as a fallback helper.
+- If you want per-user routing by email/password, that is a separate account-linking flow; the current backend uses the Telegram chat IDs you configure in `.env`.
+
+### Push notifications with Firebase Cloud Messaging
+
+The backend already supports FCM delivery. Configure these values in `backend/.env`:
+
+```env
+ENABLE_PUSH_NOTIFICATIONS=true
+FCM_CREDENTIALS_PATH=D:/path/to/firebase-service-account.json
+FCM_TOPIC=fall-alerts
+```
+
+Setup checklist:
+1. Create a Firebase project and add your Android/iOS app.
+2. Download the Firebase service account JSON for the backend and set `FCM_CREDENTIALS_PATH`.
+3. Add `google-services.json` to Android and `GoogleService-Info.plist` to iOS if you want the Flutter client to receive push messages directly.
+4. In Flutter, the app now requests notification permission and registers the FCM token automatically after login.
+5. Restart the backend after changing `.env`.
+
+The only manual Flutter steps left are:
+1. Run `flutter pub get` after the dependency update.
+2. Add `google-services.json` to `mobile/android/app/`.
+3. If you target iOS, add `GoogleService-Info.plist` to `mobile/ios/Runner/`.
+4. If Firebase asks for app identifiers, create them in Firebase Console and match the bundle/application IDs already used by your app.
+
+If you only need Telegram alerts for now, you can leave FCM enabled but unconfigured; the backend will skip push delivery when credentials are missing.
+
+---
+
 ## 🎬 Demo Scenarios
 
 ### Scenario 1: Video File (fall5.mp4)
@@ -262,7 +587,7 @@ Select your device when prompted. The app will:
 ```powershell
 # Terminal 1: Backend
 cd backend
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+..\.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 # Terminal 2: Mobile app
 cd mobile
@@ -330,8 +655,12 @@ $env:PYTHONPATH = (Get-Location)\backend
 | `RTSP_URL` | URL string | (empty) | RTSP stream URL |
 | `LOOP_VIDEO_FILE` | `true`/`false` | `false` | Loop video when done |
 | `ENABLE_STREAM` | `true`/`false` | `true` | Enable processing |
-| `FRAME_SKIP` | Integer | `1` | Process every N frames |
-| `TARGET_FPS` | Integer | `15` | Target FPS for output |
+| `FRAME_SKIP` | Integer | `0` | Process every N frames |
+| `TARGET_FPS` | Integer | `20` | Target FPS for output |
+| `USE_ML_ACTION` | `true`/`false` | `false` | Enable LSTM action model |
+| `ACTION_MODEL_PATH` | Path string | `models/action_lstm.pt` | Action model checkpoint |
+| `USE_ML_FALL` | `true`/`false` | `false` | Enable XGBoost fall model |
+| `FALL_MODEL_PATH` | Path string | `models/fall_xgb.json` | Fall model file |
 | `FALL_DROP_THRESHOLD` | Float | `0.18` | Fall detection threshold |
 | `FALL_CONFIRM_MS` | Integer | `1500` | Ms to confirm fall |
 
@@ -344,15 +673,19 @@ video-ai-detect/
 ├── backend/
 │   ├── app/
 │   │   ├── main.py                 # FastAPI app entry
-│   │   ├── api/routes.py           # API endpoints
+│   │   ├── api/v1/                 # API modules (auth, sources, monitoring, admin)
 │   │   ├── services/
 │   │   │   ├── stream_service.py   # Video processing loop
-│   │   │   ├── inference_service.py # AI inference
-│   │   │   └── alert_engine.py     # Fall alerts
+│   │   │   ├── stream_manager.py   # Multi-source session manager
+│   │   │   ├── inference_service.py # AI inference helpers
+│   │   │   └── alert_engine.py     # Alerts and reports
 │   │   ├── pipelines/
-│   │   │   ├── pose_estimation.py  # MediaPipe/YOLO pose
-│   │   │   ├── fall_detection.py   # Fall detection logic
-│   │   │   └── action_model.py     # Action classification
+│   │   │   ├── object_detection.py # YOLO object detection/tracking
+│   │   │   ├── pose_estimation.py  # YOLO pose estimation
+│   │   │   ├── action_summary.py   # Rule-based action classification
+│   │   │   ├── action_model.py     # Optional LSTM action model
+│   │   │   ├── fall_detection.py   # Rule-based fall detection
+│   │   │   └── fall_model.py       # Optional XGBoost fall model
 │   │   └── core/
 │   │       ├── config.py           # Settings from .env
 │   │       └── logging.py          # Logging setup
@@ -370,7 +703,7 @@ video-ai-detect/
 │   │   ├── services/
 │   │   │   ├── realtime_stream.dart # WebSocket connection
 │   │   │   └── api_client.dart      # API client
-│   │   ├── features/                # App screens & features
+│   │   ├── screens/                 # User/admin UI screens
 │   │   └── models/                  # Data models
 │   ├── pubspec.yaml                 # Flutter dependencies
 │   └── ...
@@ -387,7 +720,7 @@ Ensure you're in the `backend/` directory when running uvicorn:
 
 ```powershell
 cd backend
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+..\.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
 ### App can't connect to backend
@@ -421,9 +754,9 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 Use a process manager instead of `--reload`:
 
-```bash
+```powershell
 # Install supervisor or systemd
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
+..\.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
 ```
 
 ### Production Mobile

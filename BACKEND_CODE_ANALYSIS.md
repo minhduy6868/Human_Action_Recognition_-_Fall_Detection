@@ -6,6 +6,154 @@ This document identifies duplicate code, redundant functions, unused imports, an
 
 ---
 
+## Realtime Processing Flow (Code-Verified)
+
+This section documents how backend realtime works today, and clarifies the two detection modes (your model vs rule-based fallback).
+
+### Diagram 1: End-to-end realtime pipeline
+
+```mermaid
+flowchart TD
+    A[User activates source<br/>POST /api/v1/sources] --> B[StreamManager.start]
+    B --> C[Create StreamSession<br/>StreamService + RealtimeState]
+    C --> D[Open capture<br/>file/webcam/rtsp/http_mjpeg]
+    D --> E[Frame loop]
+    E --> F[YOLO track_objects]
+    F --> G[Filter person detections]
+    G --> H[Pose estimation per person]
+    H --> I[Build per-track sequence buffer]
+    I --> J[Infer action]
+    J --> K[Infer fall]
+    K --> L[Build RealtimeStatus<br/>action, fall, people[], objects[]]
+    L --> M[RealtimeState.update]
+    M --> N[Persist detection_logs]
+    M --> O[Alert/Event reasoning]
+    M --> P[WebSocket /api/v1/ws]
+    L --> Q[Update MJPEG frame]
+    Q --> R[GET /streams/{source_id}/mjpeg]
+```
+
+### A) End-to-end realtime flow
+
+1. **Source activation**
+   - User creates/activates source via `/api/v1/sources`.
+   - `StreamManager.start(...)` creates a per-source session:
+     - `StreamService` (processing thread)
+     - `RealtimeState` (session state)
+
+2. **Frame capture**
+   - `StreamService._open_capture()` opens one of:
+     - `webcam`
+     - `file` (e.g. `fall5.mp4`)
+     - `rtsp/http_mjpeg/mjpeg`
+   - Loop runs in `StreamService._run()`.
+
+3. **Object detection/tracking**
+   - `track_objects(frame)` in `app/pipelines/object_detection.py`
+   - Uses Ultralytics YOLO tracking (`model.track(..., persist=True)`).
+   - Outputs `DetectedObject[]` with bbox, class, confidence, track_id.
+   - Persons are filtered by `class_id == 0` or label `"person"`.
+
+4. **Pose estimation**
+   - For each detected person, pose keypoints are extracted.
+   - Sequence buffers are built per `track_id` (`action_window_frames`).
+
+5. **Action inference**
+   - `StreamService._infer_action(...)` chooses 1 of 2 paths:
+     - ML action model (`ActionModel`) if `USE_ML_ACTION=true`
+     - Rule-based `classify_action(...)` otherwise
+   - Then action smoothing (`smooth_action`) is applied.
+
+6. **Fall inference**
+   - `StreamService._infer_fall(...)` chooses 1 of 2 paths:
+     - ML fall model (`FallModel`, XGBoost) if `USE_ML_FALL=true`
+     - Rule-based `FallDetector.update(...)` otherwise
+
+7. **Build realtime payload**
+   - `RealtimeStatus` includes:
+     - primary action/fall/confidence
+     - `people[]` (per-person action/fall/bbox/clothing)
+     - `objects[]` (all detected objects)
+
+8. **Persist + notify + stream**
+   - Update session state: `self._state.update(status)`
+   - Persist log: `DetectionLogStore.log_status(...)`
+   - Emit alerts/reports/event reasoning
+   - MJPEG frame updated by `_update_latest_frame(...)`
+   - WebSocket `/api/v1/ws` pushes latest state periodically
+
+---
+
+### B) Object detection details ("phát hiện vật")
+
+- Module: `app/pipelines/object_detection.py`
+- Active function: `track_objects(frame)`
+- Model: `yolo11n.pt` (from config `YOLO_MODEL_PATH`)
+- Behavior:
+  - Tracks objects across frames (`tracker=botsort.yaml` by default)
+  - Returns all classes, not just humans
+  - Adds `is_person=True` for person objects
+
+There is also `detect_objects()` (single-frame detection) in the same file, but current realtime pipeline uses `track_objects()`.
+
+---
+
+### C) Two fall-detection modes (your model vs other way)
+
+#### Mode 1: **Your model (ML / XGBoost)**
+- Enabled when: `USE_ML_FALL=true`
+- File: `app/pipelines/fall_model.py`
+- Model path: `FALL_MODEL_PATH` (default `models/fall_xgb.json`)
+- Flow:
+  1. Collect pose sequence window.
+  2. Extract 10 engineered features via `extract_fall_features(...)`.
+  3. Predict score with `FallModel.predict(...)`.
+  4. Decide fall if `score >= 0.5`.
+
+#### Mode 2: **Rule-based fallback**
+- Enabled when: `USE_ML_FALL=false` (default)
+- File: `app/pipelines/fall_detection.py` (`FallDetector`)
+- Logic:
+  - center-y drop
+  - vertical velocity threshold
+  - lying/aspect-ratio confirmation
+  - candidate window + confirm duration
+  - fallback long-lying trigger
+
+This is stateful per track and runs frame-by-frame.
+
+---
+
+### D) Two action-detection modes (similar pattern)
+
+- `USE_ML_ACTION=true` -> LSTM model (`ActionModel`, `ACTION_MODEL_PATH`)
+- `USE_ML_ACTION=false` -> rule-based `classify_action(...)`
+
+So backend currently follows a **hybrid strategy**:
+- ML mode when enabled and sequence is ready
+- deterministic rule-based mode otherwise
+
+### Diagram 2: Decision branches (model vs rule-based)
+
+```mermaid
+flowchart LR
+    A[Pose sequence per track] --> B{USE_ML_ACTION?}
+    B -->|true + đủ window| C[ActionModel LSTM<br/>ACTION_MODEL_PATH]
+    B -->|false hoặc thiếu sequence| D[classify_action rules]
+    C --> E[smooth_action]
+    D --> E
+
+    E --> F{USE_ML_FALL?}
+    F -->|true + đủ window| G[FallModel XGBoost<br/>FALL_MODEL_PATH/fall_xgb.json]
+    F -->|false| H[FallDetector rules]
+    G --> I[fall_conf >= 0.5 ?]
+    H --> J[drop + velocity + lying confirm]
+    I --> K[RealtimeStatus.fall]
+    J --> K
+```
+
+---
+
 ## 1. DUPLICATE FUNCTIONS (Critical Priority)
 
 ### 1.1 `_durations_by_action()` - Defined THREE Times

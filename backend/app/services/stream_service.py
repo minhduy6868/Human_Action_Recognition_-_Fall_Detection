@@ -419,7 +419,7 @@ class StreamService:
                 self._fall_model = FallModel.load(self._settings.fall_model_path)
             features = extract_fall_features(sequence)
             fall_conf = self._fall_model.predict(features)
-            return fall_conf >= 0.5, fall_conf
+            return fall_conf >= self._settings.fall_ml_min_confidence, fall_conf
 
         detector = self._get_fall_detector(track_id)
         return detector.update(pose, action, ts_ms)

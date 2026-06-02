@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../shared_customization/localization/app_localizations.dart';
+
 class ConnectionStatus extends StatelessWidget {
   final bool isConnected;
   final String? error;
@@ -12,6 +14,7 @@ class ConnectionStatus extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context);
     if (isConnected) {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -32,9 +35,9 @@ class ConnectionStatus extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            const Text(
-              'Connected',
-              style: TextStyle(
+            Text(
+              loc.translate('connected'),
+              style: const TextStyle(
                 color: Color(0xFF1FBF9B),
                 fontWeight: FontWeight.w600,
                 fontSize: 12,
@@ -65,9 +68,9 @@ class ConnectionStatus extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           Text(
-            error != null ? 'Connection Error' : 'Connecting...',
-            style: TextStyle(
-              color: const Color(0xFFF1A53A),
+            error != null ? loc.translate('connection_error') : loc.translate('connecting'),
+            style: const TextStyle(
+              color: Color(0xFFF1A53A),
               fontWeight: FontWeight.w600,
               fontSize: 12,
             ),

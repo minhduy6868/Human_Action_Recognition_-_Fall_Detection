@@ -16,7 +16,7 @@ class AppTheme {
       brightness: brightness,
       useMaterial3: true,
       colorScheme: ColorScheme.fromSeed(
-        seedColor: _primaryColor,
+        seedColor: _secondaryColor,
         brightness: brightness,
         secondary: _secondaryColor,
         tertiary: _tertiaryColor,
@@ -26,12 +26,15 @@ class AppTheme {
     final textTheme = _buildTextTheme(base.textTheme, isDark: isDark);
 
     return base.copyWith(
-      scaffoldBackgroundColor: isDark ? const Color(0xFF0B1218) : const Color(0xFFF5F7FA),
+      scaffoldBackgroundColor:
+          isDark ? const Color(0xFF0B1218) : const Color(0xFFEAF1F7),
       appBarTheme: AppBarTheme(
         elevation: 0,
         centerTitle: false,
-        backgroundColor: isDark ? const Color(0xFF0B1218) : const Color(0xFFF5F7FA),
-        foregroundColor: isDark ? const Color(0xFFEFF4F8) : const Color(0xFF0D1B2A),
+        backgroundColor:
+            isDark ? const Color(0xFF0B1218) : const Color(0xFFEAF1F7),
+        foregroundColor:
+            isDark ? const Color(0xFFEFF4F8) : const Color(0xFF0D1B2A),
         titleTextStyle: textTheme.titleLarge?.copyWith(
           fontWeight: FontWeight.w700,
         ),
@@ -65,7 +68,8 @@ class AppTheme {
           borderRadius: BorderRadius.circular(14),
           borderSide: const BorderSide(color: _secondaryColor, width: 1.6),
         ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       ),
       navigationBarTheme: NavigationBarThemeData(
         height: 70,
@@ -74,6 +78,17 @@ class AppTheme {
             : _secondaryColor.withOpacity(0.14),
         labelTextStyle: WidgetStateProperty.all(
           textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700),
+        ),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: ButtonStyle(
+          backgroundColor: MaterialStatePropertyAll(_secondaryColor),
+          foregroundColor: const MaterialStatePropertyAll(Color(0xFFFFFFFF)),
+          padding: const MaterialStatePropertyAll(
+              EdgeInsets.symmetric(vertical: 14)),
+          shape: MaterialStatePropertyAll(
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
         ),
       ),
       dividerColor: isDark ? const Color(0xFF223041) : const Color(0xFFE3E8EE),
@@ -95,18 +110,27 @@ class AppTheme {
       titleSmall: display.titleSmall,
     );
 
-    final foreground = isDark ? const Color(0xFFEFF4F8) : const Color(0xFF0D1B2A);
+    final foreground =
+        isDark ? const Color(0xFFEFF4F8) : const Color(0xFF0D1B2A);
     final muted = isDark ? const Color(0xFFA7B4C4) : const Color(0xFF5C6C7B);
 
     return merged.copyWith(
-      displayLarge: merged.displayLarge?.copyWith(color: foreground, fontWeight: FontWeight.w800),
-      displayMedium: merged.displayMedium?.copyWith(color: foreground, fontWeight: FontWeight.w800),
-      displaySmall: merged.displaySmall?.copyWith(color: foreground, fontWeight: FontWeight.w700),
-      headlineMedium: merged.headlineMedium?.copyWith(color: foreground, fontWeight: FontWeight.w700),
-      headlineSmall: merged.headlineSmall?.copyWith(color: foreground, fontWeight: FontWeight.w600),
-      titleLarge: merged.titleLarge?.copyWith(color: foreground, fontWeight: FontWeight.w700),
-      titleMedium: merged.titleMedium?.copyWith(color: foreground, fontWeight: FontWeight.w600),
-      titleSmall: merged.titleSmall?.copyWith(color: foreground, fontWeight: FontWeight.w600),
+      displayLarge: merged.displayLarge
+          ?.copyWith(color: foreground, fontWeight: FontWeight.w800),
+      displayMedium: merged.displayMedium
+          ?.copyWith(color: foreground, fontWeight: FontWeight.w800),
+      displaySmall: merged.displaySmall
+          ?.copyWith(color: foreground, fontWeight: FontWeight.w700),
+      headlineMedium: merged.headlineMedium
+          ?.copyWith(color: foreground, fontWeight: FontWeight.w700),
+      headlineSmall: merged.headlineSmall
+          ?.copyWith(color: foreground, fontWeight: FontWeight.w600),
+      titleLarge: merged.titleLarge
+          ?.copyWith(color: foreground, fontWeight: FontWeight.w700),
+      titleMedium: merged.titleMedium
+          ?.copyWith(color: foreground, fontWeight: FontWeight.w600),
+      titleSmall: merged.titleSmall
+          ?.copyWith(color: foreground, fontWeight: FontWeight.w600),
       bodyLarge: merged.bodyLarge?.copyWith(color: foreground),
       bodyMedium: merged.bodyMedium?.copyWith(color: muted),
       bodySmall: merged.bodySmall?.copyWith(color: muted),

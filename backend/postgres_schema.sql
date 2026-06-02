@@ -131,6 +131,25 @@ CREATE INDEX IF NOT EXISTS idx_device_tokens_user_id ON device_tokens(user_id);
 CREATE INDEX IF NOT EXISTS idx_device_tokens_source_id ON device_tokens(source_id);
 CREATE INDEX IF NOT EXISTS idx_device_tokens_active ON device_tokens(is_active);
 
+CREATE TABLE IF NOT EXISTS telegram_subscribers (
+    chat_id TEXT PRIMARY KEY,
+    user_id TEXT NULL REFERENCES users(id) ON DELETE SET NULL,
+    telegram_user_id TEXT NULL,
+    display_name TEXT NULL,
+    username TEXT NULL,
+    first_name TEXT NULL,
+    last_name TEXT NULL,
+    language_code TEXT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    last_seen_at TIMESTAMPTZ NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_telegram_subscribers_user_id ON telegram_subscribers(user_id);
+CREATE INDEX IF NOT EXISTS idx_telegram_subscribers_telegram_user_id ON telegram_subscribers(telegram_user_id);
+CREATE INDEX IF NOT EXISTS idx_telegram_subscribers_active ON telegram_subscribers(is_active);
+
 CREATE TABLE IF NOT EXISTS notification_logs (
     id SERIAL PRIMARY KEY,
     alert_id INTEGER NULL REFERENCES alerts(id) ON DELETE SET NULL,

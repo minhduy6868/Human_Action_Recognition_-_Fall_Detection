@@ -18,28 +18,23 @@
 - **Device**: Samsung Galaxy S9 (SM G960N)
 - **Connected to**: `192.168.1.11:8000` (Backend WebSocket)
 - **Command**: 
-  ```powershell
-  cd mobile
-  flutter run
-  ```
+   ```powershell
+   cd backend
+   ..\.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+   ```
 
----
-
-## 🔗 How They Connect
-
-```
 ┌─────────────────────────────────────────────────────┐
 │            Backend (Windows PC)                     │
-│  Python FastAPI @ 192.168.1.11:8000               │
+   ..\.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 │  ├─ Processing fall5.mp4                          │
 │  ├─ Pose Detection (YOLO 11s)                     │
 │  ├─ Action Recognition                            │
 │  └─ Fall Detection                                 │
 └────────────────┬────────────────────────────────────┘
-                 │ WebSocket
+..\.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8000
                  │ ws://192.168.1.11:8000/api/ws
                  ↓
-┌─────────────────────────────────────────────────────┐
+ Try: `..\.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8000` (without --reload)
 │        Mobile App (Samsung Galaxy S9)              │
 │  Flutter @ io.flutter.embedding.android.         │
 │  ├─ Real-time action display                      │

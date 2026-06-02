@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
+import '../core/app_config.dart';
+import '../shared_customization/auth/auth_styles.dart';
+import '../state/app_settings_cubit.dart';
 import '../state/auth/auth_cubit.dart';
 import '../state/auth/auth_state.dart';
+import '../shared_customization/localization/app_localizations.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -15,6 +20,11 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
+  late final GoogleSignIn _googleSignIn = GoogleSignIn(
+    serverClientId: AppConfig.googleServerClientId.isEmpty
+        ? null
+        : AppConfig.googleServerClientId,
+  );
   bool _isObscured = true;
 
   @override
@@ -24,174 +34,282 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
+  Future<void> _signInWithGoogle() async {
+    final account = await _googleSignIn.signIn();
+    if (account == null) {
+      return;
+    }
+
+    final auth = await account.authentication;
+    final idToken = auth.idToken;
+    if (!mounted) {
+      return;
+    }
+
+    if (idToken == null || idToken.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            AppLocalizations.of(context)
+                .translate('google_login_failed_missing_token'),
+          ),
+        ),
+      );
+      return;
+    }
+
+    await context.read<AuthCubit>().loginWithGoogle(idToken);
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final currentLang = context.select((AppSettingsCubit c) => c.state.locale.languageCode);
 
     return Scaffold(
       body: Stack(
         children: [
           _Backdrop(theme: theme),
           SafeArea(
-            child: Center(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 420),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const SizedBox(height: 24),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          TextButton(
-                            onPressed: () => Navigator.of(context).pushNamed('/register'),
-                            child: const Text('Create account'),
-                          ),
-                          const SizedBox(width: 8),
-                          TextButton(
-                            onPressed: () => Navigator.of(context).pushNamed('/forgot'),
-                            child: const Text('Forgot password?'),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        'Tip: Use the admin account created by backend seed.',
-                        style: theme.textTheme.bodySmall,
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        'Secure access to realtime monitoring and fall alerts.',
-                        style: theme.textTheme.bodyMedium,
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 28),
-                      Card(
-                        child: Padding(
-                          padding: const EdgeInsets.all(20),
-                          child: Form(
-                            key: _formKey,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                Text(
-                                  'Sign in',
-                                  style: theme.textTheme.titleLarge?.copyWith(
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                                const SizedBox(height: 16),
-                                TextFormField(
-                                  controller: _emailController,
-                                  keyboardType: TextInputType.emailAddress,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Email',
-                                  ),
-                                  validator: (value) {
-                                    if (value == null || value.trim().isEmpty) {
-                                      return 'Email is required';
-                                    }
-                                    return null;
-                                  },
-                                ),
-                                const SizedBox(height: 14),
-                                TextFormField(
-                                  controller: _passwordController,
-                                  obscureText: _isObscured,
-                                  decoration: InputDecoration(
-                                    labelText: 'Password',
-                                    suffixIcon: IconButton(
-                                      icon: Icon(
-                                        _isObscured
-                                            ? Icons.visibility_off_outlined
-                                            : Icons.visibility_outlined,
-                                      ),
-                                      onPressed: () {
-                                        setState(() {
-                                          _isObscured = !_isObscured;
-                                        });
-                                      },
+            child: SizedBox.expand(
+              child: Column(
+                children: [
+                  Expanded(
+                    child: Center(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 24, vertical: 16),
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(
+                              maxWidth: AuthStyles.maxWidth),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              // Language switch
+                              Align(
+                                alignment: Alignment.topRight,
+                                child: DropdownButton<String>(
+                                  value: currentLang,
+                                  underline: const SizedBox.shrink(),
+                                  items: [
+                                    DropdownMenuItem(
+                                      value: 'en',
+                                      child: Text(AppLocalizations.of(context).translate('english')),
                                     ),
-                                  ),
-                                  validator: (value) {
-                                    if (value == null || value.trim().isEmpty) {
-                                      return 'Password is required';
-                                    }
-                                    return null;
+                                    DropdownMenuItem(
+                                      value: 'vi',
+                                      child: Text(AppLocalizations.of(context).translate('vietnamese')),
+                                    ),
+                                  ],
+                                  onChanged: (val) {
+                                    if (val == null) return;
+                                    context.read<AppSettingsCubit>().setLanguage(val);
                                   },
                                 ),
-                                const SizedBox(height: 20),
-                                BlocBuilder<AuthCubit, AuthState>(
-                                  builder: (context, state) {
-                                    final isLoading = state.status == AuthStatus.loading;
-                                    final error = state.error;
-
-                                    return Column(
-                                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                AppLocalizations.of(context)
+                                    .translate('secure_access'),
+                                style: AuthStyles.subtitle(context),
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: 28),
+                              Card(
+                                child: Padding(
+                                  padding: AuthStyles.cardPadding,
+                                  child: Form(
+                                    key: _formKey,
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.stretch,
                                       children: [
-                                        if (error != null)
-                                          Container(
-                                            padding: const EdgeInsets.all(12),
-                                            decoration: BoxDecoration(
-                                              color: colorScheme.error.withOpacity(0.12),
-                                              borderRadius: BorderRadius.circular(12),
-                                              border: Border.all(
-                                                color: colorScheme.error.withOpacity(0.4),
+                                        Text(
+                                          AppLocalizations.of(context)
+                                              .translate('sign_in'),
+                                          style: AuthStyles.title(context),
+                                        ),
+                                        const SizedBox(height: 16),
+                                        TextFormField(
+                                          controller: _emailController,
+                                          keyboardType:
+                                              TextInputType.emailAddress,
+                                          decoration: InputDecoration(
+                                            labelText:
+                                                AppLocalizations.of(context)
+                                                    .translate('email'),
+                                          ),
+                                          validator: (value) {
+                                            if (value == null ||
+                                                value.trim().isEmpty) {
+                                              return AppLocalizations.of(
+                                                      context)
+                                                  .translate('email_required');
+                                            }
+                                            return null;
+                                          },
+                                        ),
+                                        const SizedBox(height: 14),
+                                        TextFormField(
+                                          controller: _passwordController,
+                                          obscureText: _isObscured,
+                                          decoration: InputDecoration(
+                                            labelText:
+                                                AppLocalizations.of(context)
+                                                    .translate('password'),
+                                            suffixIcon: IconButton(
+                                              icon: Icon(
+                                                _isObscured
+                                                    ? Icons
+                                                        .visibility_off_outlined
+                                                    : Icons.visibility_outlined,
                                               ),
-                                            ),
-                                            child: Text(
-                                              error,
-                                              style: theme.textTheme.bodySmall?.copyWith(
-                                                color: colorScheme.error,
-                                              ),
+                                              onPressed: () {
+                                                setState(() {
+                                                  _isObscured = !_isObscured;
+                                                });
+                                              },
                                             ),
                                           ),
-                                        if (error != null) const SizedBox(height: 12),
-                                        FilledButton(
-                                          onPressed: isLoading
-                                              ? null
-                                              : () {
-                                                  if (_formKey.currentState?.validate() != true) {
-                                                    return;
-                                                  }
-                                                  context.read<AuthCubit>().login(
-                                                        _emailController.text.trim(),
-                                                        _passwordController.text.trim(),
-                                                      );
-                                                },
-                                          child: isLoading
-                                              ? const SizedBox(
-                                                  height: 18,
-                                                  width: 18,
-                                                  child: CircularProgressIndicator(
-                                                    strokeWidth: 2,
+                                          validator: (value) {
+                                            if (value == null ||
+                                                value.trim().isEmpty) {
+                                              return AppLocalizations.of(
+                                                      context)
+                                                  .translate(
+                                                      'password_required');
+                                            }
+                                            return null;
+                                          },
+                                        ),
+                                        const SizedBox(height: 20),
+                                        BlocBuilder<AuthCubit, AuthState>(
+                                          builder: (context, state) {
+                                            final isLoading = state.status ==
+                                                AuthStatus.loading;
+                                            final error = state.error;
+
+                                            return Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.stretch,
+                                              children: [
+                                                if (error != null)
+                                                  Container(
+                                                    padding:
+                                                        const EdgeInsets.all(
+                                                            12),
+                                                    decoration: BoxDecoration(
+                                                      color: colorScheme.error
+                                                          .withValues(
+                                                              alpha: 0.12),
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                              12),
+                                                      border: Border.all(
+                                                        color: colorScheme.error
+                                                            .withValues(
+                                                                alpha: 0.4),
+                                                      ),
+                                                    ),
+                                                    child: Text(
+                                                      error,
+                                                      style: theme
+                                                          .textTheme.bodySmall
+                                                          ?.copyWith(
+                                                        color:
+                                                            colorScheme.error,
+                                                      ),
+                                                    ),
                                                   ),
-                                                )
-                                              : const Text('Continue'),
+                                                if (error != null)
+                                                  const SizedBox(height: 12),
+                                                FilledButton(
+                                                  onPressed: isLoading
+                                                      ? null
+                                                      : () {
+                                                          if (_formKey
+                                                                  .currentState
+                                                                  ?.validate() !=
+                                                              true) {
+                                                            return;
+                                                          }
+                                                          context
+                                                              .read<AuthCubit>()
+                                                              .login(
+                                                                _emailController
+                                                                    .text
+                                                                    .trim(),
+                                                                _passwordController
+                                                                    .text
+                                                                    .trim(),
+                                                              );
+                                                        },
+                                                  child: isLoading
+                                                      ? const SizedBox(
+                                                          height: 18,
+                                                          width: 18,
+                                                          child:
+                                                              CircularProgressIndicator(
+                                                            strokeWidth: 2,
+                                                          ),
+                                                        )
+                                                      : Text(AppLocalizations
+                                                              .of(context)
+                                                          .translate(
+                                                              'continue_btn')),
+                                                ),
+                                                const SizedBox(height: 12),
+                                                OutlinedButton.icon(
+                                                  onPressed: isLoading
+                                                      ? null
+                                                      : _signInWithGoogle,
+                                                  icon: const Icon(
+                                                      Icons.g_mobiledata),
+                                                  label: Text(
+                                                    AppLocalizations.of(context)
+                                                        .translate(
+                                                            'continue_with_google'),
+                                                  ),
+                                                ),
+                                              ],
+                                            );
+                                          },
                                         ),
                                       ],
-                                    );
-                                  },
+                                    ),
+                                  ),
                                 ),
-                              ],
-                            ),
+                              ),
+                              const SizedBox(height: 12),
+                            ],
                           ),
                         ),
                       ),
-                      const SizedBox(height: 20),
-                      Text(
-                        'Tip: Use the admin account created by backend seed.',
-                        style: theme.textTheme.bodySmall,
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 12),
-                    ],
+                    ),
                   ),
-                ),
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        TextButton(
+                          onPressed: () =>
+                              Navigator.of(context).pushNamed('/register'),
+                          child: Text(AppLocalizations.of(context)
+                              .translate('create_account')),
+                        ),
+                        const SizedBox(width: 8),
+                        TextButton(
+                          onPressed: () =>
+                              Navigator.of(context).pushNamed('/forgot'),
+                          child: Text(AppLocalizations.of(context)
+                              .translate('forgot_password')),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -225,7 +343,7 @@ class _Backdrop extends StatelessWidget {
             top: -60,
             right: -20,
             child: _GlowBlob(
-              color: const Color(0xFFF36B4E).withOpacity(0.18),
+              color: const Color(0xFFF36B4E).withValues(alpha: 0.18),
               size: 180,
             ),
           ),
@@ -233,7 +351,7 @@ class _Backdrop extends StatelessWidget {
             bottom: -80,
             left: -10,
             child: _GlowBlob(
-              color: const Color(0xFF1FBF9B).withOpacity(0.18),
+              color: const Color(0xFF1FBF9B).withValues(alpha: 0.18),
               size: 200,
             ),
           ),

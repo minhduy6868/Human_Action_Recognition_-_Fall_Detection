@@ -83,6 +83,27 @@ def _resolve_source_ids(
     return [row for row in rows]
 
 
+def _resolve_realtime_state(
+    db: Session,
+    user_id: str,
+    source_id: str | None = None,
+):
+    active_source_id = source_id
+    if not active_source_id:
+        active = db.execute(
+            select(SourceConnection)
+            .where(SourceConnection.user_id == user_id, SourceConnection.is_active.is_(True))
+            .order_by(SourceConnection.updated_at.desc())
+        ).scalars().first()
+        if active:
+            active_source_id = active.id
+
+    session_state = stream_manager.get_state_for_user(user_id, active_source_id)
+    if session_state is not None:
+        return session_state
+    return state
+
+
 def _segments_from_items(items: list[RealtimeStatus]) -> list[ActionSegment]:
     if not items:
         return []
@@ -116,10 +137,24 @@ def _build_insight(items: list[RealtimeStatus], from_ms: int, to_ms: int) -> Act
             segments=[],
             fall_detected=False,
             fall_events=[],
+            max_people_count=0,
+            avg_people_count=0.0,
+            max_objects_count=0,
+            avg_objects_count=0.0,
+            multi_person_frames=0,
+            top_object_labels={},
         )
 
     durations = durations_by_action(items)
     total_duration = sum(durations.values())
+    people_counts = [len(item.people) for item in items]
+    object_counts = [len(item.objects) for item in items]
+    top_object_labels: dict[str, int] = {}
+    for item in items:
+        for detected_object in item.objects:
+            label = (detected_object.label or "unknown").strip() or "unknown"
+            top_object_labels[label] = top_object_labels.get(label, 0) + 1
+
     dominant_action = "unknown"
     dominant_ratio = 0.0
     if durations and total_duration > 0:
@@ -148,6 +183,12 @@ def _build_insight(items: list[RealtimeStatus], from_ms: int, to_ms: int) -> Act
         segments=segments,
         fall_detected=bool(fall_events),
         fall_events=fall_events,
+        max_people_count=max(people_counts, default=0),
+        avg_people_count=round(sum(people_counts) / len(people_counts), 2) if people_counts else 0.0,
+        max_objects_count=max(object_counts, default=0),
+        avg_objects_count=round(sum(object_counts) / len(object_counts), 2) if object_counts else 0.0,
+        multi_person_frames=sum(1 for count in people_counts if count > 1),
+        top_object_labels=dict(sorted(top_object_labels.items(), key=lambda item: item[1], reverse=True)[:8]),
     )
 
 
@@ -186,21 +227,37 @@ def action_summary(
 
 
 @router.get("/status", response_model=dict)
-def status(request: Request, current_user=Depends(get_current_user)) -> dict:
-    latest = state.get_latest()
+def status(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> dict:
+    rt_state = _resolve_realtime_state(db, current_user.id)
+    latest = rt_state.get_latest()
     return api_response(latest.model_dump(), request)
 
 
 @router.get("/people", response_model=dict)
-def get_people(request: Request, current_user=Depends(get_current_user)) -> dict:
-    latest = state.get_latest()
+def get_people(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> dict:
+    rt_state = _resolve_realtime_state(db, current_user.id)
+    latest = rt_state.get_latest()
     payload = [person.model_dump() for person in latest.people]
     return api_response(payload, request)
 
 
 @router.get("/people/{track_id}", response_model=dict)
-def get_person(track_id: str, request: Request, current_user=Depends(get_current_user)) -> dict:
-    latest = state.get_latest()
+def get_person(
+    track_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> dict:
+    rt_state = _resolve_realtime_state(db, current_user.id)
+    latest = rt_state.get_latest()
     for person in latest.people:
         if person.track_id == track_id:
             return api_response(person.model_dump(), request)
@@ -208,8 +265,13 @@ def get_person(track_id: str, request: Request, current_user=Depends(get_current
 
 
 @router.get("/objects", response_model=dict)
-def get_objects(request: Request, current_user=Depends(get_current_user)) -> dict:
-    latest = state.get_latest()
+def get_objects(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> dict:
+    rt_state = _resolve_realtime_state(db, current_user.id)
+    latest = rt_state.get_latest()
     payload = [obj.model_dump() for obj in latest.objects]
     return api_response(payload, request)
 
@@ -218,9 +280,11 @@ def get_objects(request: Request, current_user=Depends(get_current_user)) -> dic
 def history(
     request: Request,
     limit: int = 100,
+    db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ) -> dict:
-    items = state.get_history(limit)
+    rt_state = _resolve_realtime_state(db, current_user.id)
+    items = rt_state.get_history(limit)
     return api_response({"items": [item.model_dump() for item in items]}, request)
 
 
@@ -228,9 +292,11 @@ def history(
 def alerts(
     request: Request,
     limit: int = 100,
+    db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ) -> dict:
-    items = state.get_alerts(limit)
+    rt_state = _resolve_realtime_state(db, current_user.id)
+    items = rt_state.get_alerts(limit)
     return api_response([item.model_dump() for item in items], request)
 
 
@@ -238,9 +304,11 @@ def alerts(
 def alerts_after(
     request: Request,
     after_id: int = 0,
+    db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ) -> dict:
-    items = state.get_alerts_after(after_id)
+    rt_state = _resolve_realtime_state(db, current_user.id)
+    items = rt_state.get_alerts_after(after_id)
     return api_response([item.model_dump() for item in items], request)
 
 
@@ -248,9 +316,11 @@ def alerts_after(
 def fall_events(
     request: Request,
     limit: int = 100,
+    db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ) -> dict:
-    items = state.get_fall_events(limit)
+    rt_state = _resolve_realtime_state(db, current_user.id)
+    items = rt_state.get_fall_events(limit)
     return api_response([item.model_dump() for item in items], request)
 
 
@@ -258,9 +328,11 @@ def fall_events(
 def fall_events_after(
     request: Request,
     after_id: int = 0,
+    db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ) -> dict:
-    items = state.get_fall_events_after(after_id)
+    rt_state = _resolve_realtime_state(db, current_user.id)
+    items = rt_state.get_fall_events_after(after_id)
     return api_response([item.model_dump() for item in items], request)
 
 
@@ -268,9 +340,11 @@ def fall_events_after(
 def reports(
     request: Request,
     limit: int = 20,
+    db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ) -> dict:
-    items = state.get_reports(limit)
+    rt_state = _resolve_realtime_state(db, current_user.id)
+    items = rt_state.get_reports(limit)
     return api_response([item.model_dump() for item in items], request)
 
 
@@ -289,10 +363,12 @@ def cameras(request: Request, current_user=Depends(get_current_user)) -> dict:
 def summary(
     request: Request,
     window_ms: int = 5000,
+    db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ) -> dict:
     now_ms = int(time.time() * 1000)
-    segments = state.summarize_actions(window_ms, now_ms)
+    rt_state = _resolve_realtime_state(db, current_user.id)
+    segments = rt_state.summarize_actions(window_ms, now_ms)
     payload = ActionTimelineResponse(window_ms=window_ms, segments=segments)
     return api_response(payload.model_dump(), request)
 
@@ -301,10 +377,12 @@ def summary(
 def insights(
     request: Request,
     window_ms: int = 24 * 60 * 60 * 1000,
+    db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ) -> dict:
     now_ms = int(time.time() * 1000)
-    insight = ActivityInsightResponse(**state.activity_insight(window_ms=window_ms, now_ms=now_ms))
+    rt_state = _resolve_realtime_state(db, current_user.id)
+    insight = ActivityInsightResponse(**rt_state.activity_insight(window_ms=window_ms, now_ms=now_ms))
     return api_response(insight.model_dump(), request)
 
 
@@ -316,7 +394,8 @@ def chat_query(
     current_user=Depends(get_current_user),
 ) -> dict:
     _enforce_ai_quota(db, current_user)
-    result = chat_service.answer(payload.question, payload.window_ms)
+    rt_state = _resolve_realtime_state(db, current_user.id)
+    result = chat_service.answer(payload.question, payload.window_ms, insight_state=rt_state)
     chat_history_store.record(
         payload.question,
         result.answer,
@@ -420,7 +499,7 @@ def logs(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ) -> dict:
-    query = select(DetectionLog)
+    query = select(DetectionLog).where(DetectionLog.user_id == current_user.id)
     if from_ms is not None:
         query = query.where(DetectionLog.timestamp_ms >= from_ms)
     if to_ms is not None:
@@ -680,7 +759,8 @@ async def stream_ws(websocket: WebSocket, current_user=Depends(get_current_user_
             stream_manager.start(source_id=src.id, user_id=current_user.id, source_type=src.source_type, source_url=src.source_url)
 
         while True:
-            latest = state.get_latest()
+            rt_state = _resolve_realtime_state(db, current_user.id)
+            latest = rt_state.get_latest()
             await websocket.send_json(latest.model_dump())
             await asyncio.sleep(settings.ws_interval_ms / 1000)
     except WebSocketDisconnect:
@@ -704,7 +784,8 @@ async def fall_alert_ws(websocket: WebSocket, current_user=Depends(get_current_u
 
         last_event_id = 0
         while True:
-            events = state.get_fall_events_after(last_event_id)
+            rt_state = _resolve_realtime_state(db, current_user.id)
+            events = rt_state.get_fall_events_after(last_event_id)
             for event in events:
                 await websocket.send_json(
                     {
@@ -733,7 +814,8 @@ async def alert_ws(websocket: WebSocket, current_user=Depends(get_current_user_w
 
         last_alert_id = 0
         while True:
-            alerts = state.get_alerts_after(last_alert_id)
+            rt_state = _resolve_realtime_state(db, current_user.id)
+            alerts = rt_state.get_alerts_after(last_alert_id)
             for alert in alerts:
                 await websocket.send_json(
                     {

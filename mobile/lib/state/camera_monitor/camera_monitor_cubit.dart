@@ -1,19 +1,21 @@
 import 'dart:async';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../../models/realtime_status.dart';
 import '../../services/realtime_stream.dart';
-import '../../services/camera_api.dart';
+import '../../services/sources_api.dart';
 import 'camera_monitor_state.dart';
 
 class CameraMonitorCubit extends Cubit<CameraMonitorState> {
-  CameraMonitorCubit(this._stream, this._cameraApi)
+  CameraMonitorCubit(this._stream, this._sourcesApi)
       : super(CameraMonitorState.initial());
 
   final RealtimeStream _stream;
-  final CameraApi _cameraApi;
+  final SourcesApi _sourcesApi;
   StreamSubscription? _subscription;
+  WebSocketChannel? _channel;
   int _connectSession = 0;
 
   void initialize() {
@@ -21,47 +23,61 @@ class CameraMonitorCubit extends Cubit<CameraMonitorState> {
       logs: _appendSystemLog(state.logs, 'Connecting to backend stream...'),
     ));
     connect();
-    loadCameras();
+    loadSources();
   }
 
   Future<void> connect() async {
     final session = ++_connectSession;
-    await _subscription?.cancel();
-    _subscription = null;
+    await _disconnect();
 
     try {
       final channel = _stream.connect();
       await channel.ready;
       if (isClosed || session != _connectSession) {
-        unawaited(channel.sink.close());
+        await _closeChannel(channel);
         return;
       }
+
+      _channel = channel;
       emit(state.copyWith(isConnected: true, error: null));
 
       _subscription = channel.stream.listen(
         (message) {
-          final map = _stream.decodeMessage(message);
-          final status = RealtimeStatus.fromMap(map);
-          emit(state.copyWith(
-            status: status,
-            isConnected: true,
-            logs: _appendLog(state.logs, status),
-          ));
+          if (isClosed || session != _connectSession) return;
+          try {
+            final map = _stream.decodeMessage(message);
+            final status = RealtimeStatus.fromMap(map);
+            emit(state.copyWith(
+              status: status,
+              isConnected: true,
+              logs: _appendLog(state.logs, status),
+            ));
+          } catch (e) {
+            emit(state.copyWith(
+              isConnected: false,
+              error: e.toString(),
+            ));
+          }
         },
         onError: (error) {
+          if (isClosed || session != _connectSession) return;
           emit(state.copyWith(
             isConnected: false,
             error: error.toString(),
             logs: _appendSystemLog(
                 state.logs, 'WebSocket error: ${error.toString()}'),
           ));
+          unawaited(_disconnect());
         },
         onDone: () {
+          if (isClosed || session != _connectSession) return;
           emit(state.copyWith(
             isConnected: false,
             logs: _appendSystemLog(state.logs, 'Backend stream closed.'),
           ));
+          unawaited(_disconnect());
         },
+        cancelOnError: true,
       );
     } catch (e) {
       if (isClosed || session != _connectSession) return;
@@ -73,20 +89,55 @@ class CameraMonitorCubit extends Cubit<CameraMonitorState> {
     }
   }
 
-  Future<void> loadCameras() async {
-    emit(state.copyWith(isLoadingCameras: true));
+  Future<void> disconnect() => _disconnect();
+
+  Future<void> _disconnect() async {
+    await _subscription?.cancel();
+    _subscription = null;
+    final channel = _channel;
+    _channel = null;
+    await _closeChannel(channel);
+  }
+
+  Future<void> _closeChannel(WebSocketChannel? channel) async {
+    if (channel == null) return;
     try {
-      final response = await _cameraApi.fetchCameras();
+      await channel.sink.close();
+    } catch (_) {}
+  }
+
+  Future<void> loadSources() async {
+    emit(state.copyWith(isLoadingSources: true));
+    try {
+      final sources = await _sourcesApi.listSources();
+      final activeIndex = sources.indexWhere((source) => source.isActive);
+      final selectedIndex = activeIndex >= 0 ? activeIndex : -1;
       emit(state.copyWith(
-        cameras: response.items,
-        activeIndex: response.activeIndex,
-        isLoadingCameras: false,
+        sources: sources,
+        selectedIndex: selectedIndex,
+        isLoadingSources: false,
       ));
     } catch (error) {
       emit(state.copyWith(
-        isLoadingCameras: false,
+        isLoadingSources: false,
         error: error.toString(),
       ));
+    }
+  }
+
+  Future<void> selectSource(int index) async {
+    if (index < 0 || index >= state.sources.length) {
+      return;
+    }
+
+    final source = state.sources[index];
+    emit(state.copyWith(selectedIndex: index, error: null));
+
+    try {
+      await _sourcesApi.activateSource(source.id);
+      await loadSources();
+    } catch (error) {
+      emit(state.copyWith(error: error.toString()));
     }
   }
 
@@ -121,10 +172,9 @@ class CameraMonitorCubit extends Cubit<CameraMonitorState> {
   }
 
   @override
-  Future<void> close() {
+  Future<void> close() async {
     _connectSession++;
-    _subscription?.cancel();
-    _subscription = null;
+    await _disconnect();
     return super.close();
   }
 }

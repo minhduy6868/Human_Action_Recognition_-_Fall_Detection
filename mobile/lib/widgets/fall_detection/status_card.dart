@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../shared_customization/localization/app_localizations.dart';
+
 class StatusCard extends StatelessWidget {
   final String action;
   final double confidence;
@@ -17,25 +19,6 @@ class StatusCard extends StatelessWidget {
   static double _clamp01(double v) {
     if (v.isNaN || v.isInfinite) return 0;
     return v.clamp(0.0, 1.0);
-  }
-
-  static String _actionLabel(String raw) {
-    switch (raw.toLowerCase()) {
-      case 'standing':
-        return 'STANDING';
-      case 'walking':
-        return 'WALKING';
-      case 'running':
-        return 'RUNNING';
-      case 'sitting':
-        return 'SITTING';
-      case 'lying':
-        return 'LYING';
-      case 'crouching':
-        return 'CROUCHING';
-      default:
-        return 'UNKNOWN';
-    }
   }
 
   Color get actionColor {
@@ -80,6 +63,7 @@ class StatusCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final conf01 = _clamp01(confidence);
     final fall01 = _clamp01(fallConfidence);
+    final loc = AppLocalizations.of(context);
     return Card(
       child: Container(
         decoration: BoxDecoration(
@@ -110,7 +94,7 @@ class StatusCard extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             Text(
-              _actionLabel(action),
+              loc.actionLabelUpper(action),
               style: const TextStyle(
                 fontSize: 26,
                 fontWeight: FontWeight.bold,
@@ -125,7 +109,7 @@ class StatusCard extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      'Confidence',
+                      loc.translate('confidence'),
                       style: TextStyle(
                         fontSize: 14,
                         color: Colors.white.withOpacity(0.85),
@@ -170,7 +154,7 @@ class StatusCard extends StatelessWidget {
                     const Icon(Icons.warning, color: Colors.white),
                     const SizedBox(width: 8),
                     Text(
-                      'FALL DETECTED',
+                      loc.translate('fall_detected').toUpperCase(),
                       style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.bold,
@@ -183,7 +167,7 @@ class StatusCard extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                'Confidence: ${(fall01 * 100).toStringAsFixed(1)}%',
+                  '${loc.translate('confidence')}: ${(fall01 * 100).toStringAsFixed(1)}%',
                 style: TextStyle(
                   fontSize: 12,
                   color: Colors.white.withOpacity(0.75),

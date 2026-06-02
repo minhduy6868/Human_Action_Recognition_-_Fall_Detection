@@ -13,6 +13,7 @@ import 'screens/sources_screen.dart';
 import 'screens/history_screen.dart';
 import 'screens/logs_screen.dart';
 import 'screens/reports_screen.dart';
+import 'screens/admin_shell.dart';
 import 'state/camera_monitor/camera_monitor_cubit.dart';
 import 'state/fall_detection/realtime_cubit.dart';
 import 'shared_customization/localization/app_localizations.dart';
@@ -38,6 +39,7 @@ class App extends StatelessWidget {
         builder: (context, settingsState) {
           return MaterialApp(
             title: 'Video AI Detect',
+            debugShowCheckedModeBanner: false,
             theme: AppTheme.lightTheme,
             darkTheme: AppTheme.darkTheme,
             themeMode: settingsState.themeMode,
@@ -66,6 +68,9 @@ class App extends StatelessWidget {
                   return const _SplashScreen();
                 }
                 if (authState.status == AuthStatus.authenticated) {
+                  if (authState.user?.role == 'admin') {
+                    return const AdminShell();
+                  }
                   return MultiBlocProvider(
                     providers: [
                       BlocProvider(create: (_) => getIt<CameraMonitorCubit>()),

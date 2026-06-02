@@ -1,4 +1,4 @@
-import '../../models/camera_info.dart';
+import '../../models/source.dart';
 import '../../models/realtime_status.dart';
 
 class CameraMonitorState {
@@ -7,36 +7,44 @@ class CameraMonitorState {
     required this.isConnected,
     required this.error,
     required this.logs,
-    required this.cameras,
-    required this.activeIndex,
-    required this.isLoadingCameras,
+    required this.sources,
+    required this.selectedIndex,
+    required this.isLoadingSources,
   });
 
   final RealtimeStatus status;
   final bool isConnected;
   final String? error;
   final List<String> logs;
-  final List<CameraInfo> cameras;
-  final int activeIndex;
-  final bool isLoadingCameras;
+  final List<Source> sources;
+  final int selectedIndex;
+  final bool isLoadingSources;
+
+  Source? get selectedSource {
+    if (sources.isEmpty || selectedIndex < 0) {
+      return null;
+    }
+    final index = selectedIndex.clamp(0, sources.length - 1);
+    return sources[index];
+  }
 
   CameraMonitorState copyWith({
     RealtimeStatus? status,
     bool? isConnected,
     String? error,
     List<String>? logs,
-    List<CameraInfo>? cameras,
-    int? activeIndex,
-    bool? isLoadingCameras,
+    List<Source>? sources,
+    int? selectedIndex,
+    bool? isLoadingSources,
   }) {
     return CameraMonitorState(
       status: status ?? this.status,
       isConnected: isConnected ?? this.isConnected,
       error: error,
       logs: logs ?? this.logs,
-      cameras: cameras ?? this.cameras,
-      activeIndex: activeIndex ?? this.activeIndex,
-      isLoadingCameras: isLoadingCameras ?? this.isLoadingCameras,
+      sources: sources ?? this.sources,
+      selectedIndex: selectedIndex ?? this.selectedIndex,
+      isLoadingSources: isLoadingSources ?? this.isLoadingSources,
     );
   }
 
@@ -46,9 +54,9 @@ class CameraMonitorState {
       isConnected: false,
       error: null,
       logs: const [],
-      cameras: const [],
-      activeIndex: 0,
-      isLoadingCameras: false,
+      sources: const [],
+      selectedIndex: -1,
+      isLoadingSources: false,
     );
   }
 }
