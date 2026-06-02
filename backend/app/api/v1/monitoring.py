@@ -116,10 +116,24 @@ def _build_insight(items: list[RealtimeStatus], from_ms: int, to_ms: int) -> Act
             segments=[],
             fall_detected=False,
             fall_events=[],
+            max_people_count=0,
+            avg_people_count=0.0,
+            max_objects_count=0,
+            avg_objects_count=0.0,
+            multi_person_frames=0,
+            top_object_labels={},
         )
 
     durations = durations_by_action(items)
     total_duration = sum(durations.values())
+    people_counts = [len(item.people) for item in items]
+    object_counts = [len(item.objects) for item in items]
+    top_object_labels: dict[str, int] = {}
+    for item in items:
+        for detected_object in item.objects:
+            label = (detected_object.label or "unknown").strip() or "unknown"
+            top_object_labels[label] = top_object_labels.get(label, 0) + 1
+
     dominant_action = "unknown"
     dominant_ratio = 0.0
     if durations and total_duration > 0:
@@ -148,6 +162,12 @@ def _build_insight(items: list[RealtimeStatus], from_ms: int, to_ms: int) -> Act
         segments=segments,
         fall_detected=bool(fall_events),
         fall_events=fall_events,
+        max_people_count=max(people_counts, default=0),
+        avg_people_count=round(sum(people_counts) / len(people_counts), 2) if people_counts else 0.0,
+        max_objects_count=max(object_counts, default=0),
+        avg_objects_count=round(sum(object_counts) / len(object_counts), 2) if object_counts else 0.0,
+        multi_person_frames=sum(1 for count in people_counts if count > 1),
+        top_object_labels=dict(sorted(top_object_labels.items(), key=lambda item: item[1], reverse=True)[:8]),
     )
 
 

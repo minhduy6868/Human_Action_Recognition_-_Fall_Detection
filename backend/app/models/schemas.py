@@ -116,6 +116,12 @@ class ActivityInsightResponse(BaseModel):
     segments: list[ActionSegment]
     fall_detected: bool
     fall_events: list[FallEvent]
+    max_people_count: int = 0
+    avg_people_count: float = 0.0
+    max_objects_count: int = 0
+    avg_objects_count: float = 0.0
+    multi_person_frames: int = 0
+    top_object_labels: dict[str, int] = Field(default_factory=dict)
 
 
 class ReportRequest(BaseModel):
@@ -164,6 +170,10 @@ class ChatQueryResponse(BaseModel):
 class AuthLoginRequest(BaseModel):
     email: str
     password: str
+
+
+class GoogleAuthRequest(BaseModel):
+    id_token: str
 
 
 class AuthRefreshRequest(BaseModel):

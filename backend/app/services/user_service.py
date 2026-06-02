@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import secrets
+
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -16,6 +18,27 @@ class UserService:
                 detail="Email already registered",
             )
         user = User(email=email, name=name or "", password_hash=hash_password(password))
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        return user
+
+    def get_or_create_google_user(self, db: Session, email: str, name: str) -> User:
+        user = db.query(User).filter(User.email == email).first()
+        if user:
+            if name and user.name != name:
+                user.name = name
+                db.add(user)
+                db.commit()
+                db.refresh(user)
+            return user
+
+        random_password = secrets.token_urlsafe(32)
+        user = User(
+            email=email,
+            name=name or email.split("@")[0],
+            password_hash=hash_password(random_password),
+        )
         db.add(user)
         db.commit()
         db.refresh(user)

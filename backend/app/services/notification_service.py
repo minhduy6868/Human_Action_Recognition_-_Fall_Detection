@@ -20,7 +20,7 @@ except Exception:  # pragma: no cover - optional dependency at runtime
 
 from app.core.config import get_settings
 from app.db.database import SessionLocal
-from app.db.models import DeviceToken, NotificationLog, OtpRequest
+from app.db.models import DeviceToken, NotificationLog, OtpRequest, TelegramSubscriber
 from app.models.schemas import AlertEvent
 
 logger = logging.getLogger(__name__)
@@ -83,6 +83,12 @@ class NotificationService:
 
         if settings.enable_email_notifications:
             self._send_email(alert, image_url, user_id, source_id)
+        # Telegram (send photo if available, otherwise text)
+        if settings.enable_telegram_notifications:
+            try:
+                self._send_telegram(alert, image_bytes, image_url, user_id=user_id, source_id=source_id)
+            except Exception:
+                logger.exception("Telegram notify failed")
 
     def _upload_image(self, image_bytes: bytes) -> str | None:
         if not settings.cloudinary_cloud_name or not settings.cloudinary_upload_preset:
@@ -398,3 +404,74 @@ class NotificationService:
                 db.commit()
         except Exception as exc:  # pragma: no cover - defensive logging
             logger.exception("Notification log insert failed: %s", exc)
+
+    def _send_telegram(
+        self,
+        alert: AlertEvent,
+        image_bytes: bytes | None,
+        image_url: str | None,
+        user_id: str | None = None,
+        source_id: str | None = None,
+    ) -> None:
+        token = settings.telegram_bot_token
+        chat_ids = self._get_telegram_chat_ids(user_id=user_id)
+        if not token or not chat_ids:
+            logger.warning("Telegram config missing; skip telegram send")
+            return
+
+        base = f"https://api.telegram.org/bot{token}"
+        caption = f"{alert.title or 'Fall detected'}\n{alert.message or ''}\nAction: {alert.action} ({alert.confidence:.2f})\nTime: {alert.timestamp_ms}"
+
+        for cid in chat_ids:
+            try:
+                if image_bytes:
+                    url = f"{base}/sendPhoto"
+                    files = {"photo": ("fall.jpg", image_bytes, "image/jpeg")}
+                    data = {"chat_id": cid, "caption": caption}
+                    with httpx.Client(timeout=20) as client:
+                        resp = client.post(url, data=data, files=files)
+                        resp.raise_for_status()
+                    self._log_notification(alert.alert_id, "telegram", "telegram", "success", {"chat_id": cid})
+                elif image_url:
+                    # send photo by URL
+                    url = f"{base}/sendPhoto"
+                    data = {"chat_id": cid, "photo": image_url, "caption": caption}
+                    with httpx.Client(timeout=15) as client:
+                        resp = client.post(url, data=data)
+                        resp.raise_for_status()
+                    self._log_notification(alert.alert_id, "telegram", "telegram", "success", {"chat_id": cid, "image_url": image_url})
+                else:
+                    # fallback to text
+                    url = f"{base}/sendMessage"
+                    data = {"chat_id": cid, "text": caption}
+                    with httpx.Client(timeout=10) as client:
+                        resp = client.post(url, data=data)
+                        resp.raise_for_status()
+                    self._log_notification(alert.alert_id, "telegram", "telegram", "success", {"chat_id": cid})
+            except Exception as exc:
+                logger.exception("Telegram send to %s failed: %s", cid, exc)
+                self._log_notification(alert.alert_id, "telegram", "telegram", "failed", {"chat_id": cid}, error=str(exc))
+
+    def _get_telegram_chat_ids(self, user_id: str | None = None) -> list[str]:
+        try:
+            with SessionLocal() as db:
+                query = db.query(TelegramSubscriber).filter(TelegramSubscriber.is_active.is_(True))
+                if user_id:
+                    query = query.filter(TelegramSubscriber.user_id == user_id)
+                    rows = query.all()
+                    chat_ids = [row.chat_id for row in rows if row.chat_id]
+                    return list(dict.fromkeys(chat_ids))
+
+                chat_ids: list[str] = []
+                if settings.telegram_chat_ids:
+                    chat_ids.extend(
+                        cid.strip() for cid in settings.telegram_chat_ids.split(",") if cid.strip()
+                    )
+
+                rows = query.all()
+                chat_ids.extend(row.chat_id for row in rows if row.chat_id)
+        except Exception:
+            logger.exception("Failed to load Telegram subscribers")
+
+        # Keep order stable while removing duplicates.
+        return list(dict.fromkeys(chat_ids))
