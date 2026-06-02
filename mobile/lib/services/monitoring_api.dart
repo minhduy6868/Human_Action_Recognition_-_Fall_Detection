@@ -32,4 +32,39 @@ class MonitoringApi {
     final resp = await _client.getJson('/alerts?limit=$limit', auth: true);
     return _extractList(resp);
   }
+
+  Future<List<dynamic>> getChatHistory({int limit = 100}) async {
+    final resp = await _client.getJson('/chat/history?limit=$limit', auth: true);
+    return _extractList(resp);
+  }
+
+  Future<Map<String, dynamic>> askAssistant(
+    String question, {
+    int? windowMs,
+  }) async {
+    final body = <String, dynamic>{'question': question};
+    if (windowMs != null && windowMs > 0) {
+      body['window_ms'] = windowMs;
+    }
+    final resp = await _client.postJson('/chat/query', body: body, auth: true);
+    return resp['data'] as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> summarizeActivity({
+    required String question,
+    required DateTime from,
+    required DateTime to,
+    List<String> sourceIds = const [],
+  }) async {
+    final body = <String, dynamic>{
+      'from': from.toUtc().toIso8601String(),
+      'to': to.toUtc().toIso8601String(),
+      'question': question,
+    };
+    if (sourceIds.isNotEmpty) {
+      body['source_ids'] = sourceIds;
+    }
+    final resp = await _client.postJson('/summary/query', body: body, auth: true);
+    return resp['data'] as Map<String, dynamic>;
+  }
 }

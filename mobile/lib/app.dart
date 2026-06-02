@@ -38,6 +38,7 @@ class App extends StatelessWidget {
         builder: (context, settingsState) {
           return MaterialApp(
             title: 'Video AI Detect',
+            debugShowCheckedModeBanner: false,
             theme: AppTheme.lightTheme,
             darkTheme: AppTheme.darkTheme,
             themeMode: settingsState.themeMode,

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../models/person_action.dart';
+import '../../shared_customization/localization/app_localizations.dart';
 
 class PeopleListWidget extends StatelessWidget {
   const PeopleListWidget({
@@ -13,6 +14,7 @@ class PeopleListWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final loc = AppLocalizations.of(context);
     if (people.isEmpty) {
       return Card(
         elevation: 2,
@@ -23,7 +25,7 @@ class PeopleListWidget extends StatelessWidget {
               Icon(Icons.person_off, color: theme.textTheme.bodySmall?.color),
               const SizedBox(width: 12),
               Text(
-                'No people detected',
+                loc.translate('no_data'),
                 style: theme.textTheme.bodyMedium,
               ),
             ],
@@ -44,7 +46,7 @@ class PeopleListWidget extends StatelessWidget {
                 Icon(Icons.people, color: theme.colorScheme.primary),
                 const SizedBox(width: 8),
                 Text(
-                  'People Detected (${people.length})',
+                  '${loc.translate('status')} (${people.length})',
                   style: theme.textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.w700,
                   ),
@@ -63,7 +65,7 @@ class PeopleListWidget extends StatelessWidget {
             ),
             itemBuilder: (context, index) {
               final person = people[index];
-              return _buildPersonTile(person);
+              return _buildPersonTile(context, person);
             },
           ),
         ],
@@ -71,7 +73,8 @@ class PeopleListWidget extends StatelessWidget {
     );
   }
 
-  Widget _buildPersonTile(PersonAction person) {
+  Widget _buildPersonTile(BuildContext context, PersonAction person) {
+    final loc = AppLocalizations.of(context);
     Color actionColor = const Color(0xFF1C7ED6);
     IconData actionIcon = Icons.person;
 
@@ -123,7 +126,7 @@ class PeopleListWidget extends StatelessWidget {
           Row(
             children: [
               Chip(
-                label: Text(person.actionDisplay),
+                label: Text(loc.actionLabel(person.action)),
                 backgroundColor: actionColor.withOpacity(0.3),
                 labelStyle: TextStyle(color: actionColor, fontSize: 12),
                 padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -145,7 +148,9 @@ class PeopleListWidget extends StatelessWidget {
                   const SizedBox(width: 4),
                   Expanded(
                     child: Text(
-                      person.clothingDescription,
+                      person.clothing.upper == 'unknown' && person.clothing.lower == 'unknown'
+                          ? loc.translate('unknown_clothing')
+                          : person.clothingDescription,
                       style: TextStyle(color: Colors.grey[600], fontSize: 11),
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -162,13 +167,13 @@ class PeopleListWidget extends StatelessWidget {
                 color: Colors.red.withOpacity(0.2),
                 borderRadius: BorderRadius.circular(4),
               ),
-              child: const Row(
+              child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.warning, color: Colors.red, size: 18),
-                  SizedBox(width: 4),
+                  const Icon(Icons.warning, color: Colors.red, size: 18),
+                  const SizedBox(width: 4),
                   Text(
-                    'FALL',
+                    loc.translate('fall_detected').toUpperCase(),
                     style: TextStyle(
                       color: Colors.red,
                       fontWeight: FontWeight.bold,

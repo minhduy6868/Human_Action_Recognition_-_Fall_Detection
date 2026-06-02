@@ -23,6 +23,19 @@ class AuthApi {
     return tokens;
   }
 
+  Future<AuthTokens> loginWithGoogle(String idToken) async {
+    final payload = await client.postJson(
+      '/auth/google',
+      body: {
+        'id_token': idToken,
+      },
+    );
+    final data = payload['data'] as Map<String, dynamic>;
+    final tokens = AuthTokens.fromMap(data);
+    await storage.setToken(tokens.accessToken, tokens.refreshToken);
+    return tokens;
+  }
+
   Future<AuthTokens> refresh() async {
     final refreshToken = storage.refreshToken;
     if (refreshToken == null) {
@@ -59,7 +72,8 @@ class AuthApi {
     return UserProfile.fromMap(data);
   }
 
-  Future<AuthTokens> register(String email, String name, String password) async {
+  Future<AuthTokens> register(
+      String email, String name, String password) async {
     final payload = await client.postJson(
       '/auth/register',
       body: {'email': email, 'name': name, 'password': password},
@@ -71,18 +85,44 @@ class AuthApi {
   }
 
   Future<String?> requestOtp(String email, {String purpose = 'reset'}) async {
-    final payload = await client.postJson('/auth/otp/request', body: {'email': email, 'purpose': purpose});
+    final payload = await client.postJson('/auth/otp/request',
+        body: {'email': email, 'purpose': purpose});
     final data = payload['data'] as Map<String, dynamic>;
     return data['otp'] as String?;
   }
 
-  Future<bool> verifyOtp(String email, String otp, {String purpose = 'reset'}) async {
-    final payload = await client.postJson('/auth/otp/verify', body: {'email': email, 'otp': otp, 'purpose': purpose});
+  Future<bool> verifyOtp(String email, String otp,
+      {String purpose = 'reset'}) async {
+    final payload = await client.postJson('/auth/otp/verify',
+        body: {'email': email, 'otp': otp, 'purpose': purpose});
     final data = payload['data'] as Map<String, dynamic>;
     return data['ok'] as bool;
   }
 
-  Future<void> resetPassword(String email, String otp, String newPassword) async {
-    await client.postJson('/auth/password/reset', body: {'email': email, 'otp': otp, 'new_password': newPassword});
+  Future<void> resetPassword(
+      String email, String otp, String newPassword) async {
+    await client.postJson('/auth/password/reset',
+        body: {'email': email, 'otp': otp, 'new_password': newPassword});
+  }
+
+  Future<void> registerDeviceToken(String token,
+      {String platform = 'unknown', String? sourceId}) async {
+    await client.postJson(
+      '/auth/device-token/register',
+      body: {
+        'token': token,
+        'platform': platform,
+        if (sourceId != null) 'source_id': sourceId,
+      },
+      auth: true,
+    );
+  }
+
+  Future<void> removeDeviceToken(String token) async {
+    await client.postJson(
+      '/auth/device-token/remove',
+      body: {'token': token},
+      auth: true,
+    );
   }
 }

@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 class AppConfig {
-  static String get _backendHost {
+  static String get backendHost {
     const backendHost = String.fromEnvironment('BACKEND_HOST');
     if (backendHost.isNotEmpty) {
       return backendHost;
@@ -13,7 +13,7 @@ class AppConfig {
 
     switch (defaultTargetPlatform) {
       case TargetPlatform.android:
-        return '192.168.1.10:8000'; // Updated to current PC IP
+        return '10.0.2.2:8000';
       case TargetPlatform.iOS:
         return '127.0.0.1:8000';
       default:
@@ -23,21 +23,30 @@ class AppConfig {
 
   static String get apiBaseUrl => String.fromEnvironment(
         'API_BASE_URL',
-      defaultValue: 'http://$_backendHost/api/v1',
+        defaultValue: 'http://$backendHost/api/v1',
       );
 
   static String get wsUrl => String.fromEnvironment(
         'WS_URL',
-      defaultValue: 'ws://$_backendHost/api/v1/ws',
+        defaultValue: 'ws://$backendHost/api/v1/ws',
       );
 
   static String get camerasUrl => String.fromEnvironment(
         'CAMERAS_URL',
-      defaultValue: 'http://$_backendHost/api/v1/cameras',
+        defaultValue: 'http://$backendHost/api/v1/cameras',
+      );
+
+  static String get googleServerClientId => String.fromEnvironment(
+        'GOOGLE_SERVER_CLIENT_ID',
+        defaultValue: '',
       );
 
   static String get mjpegUrl => String.fromEnvironment(
         'MJPEG_URL',
-      defaultValue: 'http://$_backendHost/api/v1/stream/mjpeg',
+        defaultValue: 'http://$backendHost/api/v1/stream/mjpeg',
       );
+
+  static String sourceMjpegUrl(String sourceId) {
+    return '$apiBaseUrl/streams/$sourceId/mjpeg';
+  }
 }

@@ -69,7 +69,7 @@ class ApiClient {
   }
 
   Map<String, dynamic> _decode(http.Response response) {
-    final payload = jsonDecode(response.body) as Map<String, dynamic>;
+    final payload = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
     if (response.statusCode >= 400) {
       final error = payload['error'] as Map<String, dynamic>?;
       final message = error?['message']?.toString() ?? 'Request failed';

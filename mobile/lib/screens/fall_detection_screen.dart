@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../state/fall_detection/realtime_cubit.dart';
 import '../state/fall_detection/realtime_state.dart';
+import '../shared_customization/localization/app_localizations.dart';
 import '../widgets/fall_detection/index.dart';
 
 class FallDetectionScreen extends StatefulWidget {
@@ -72,7 +73,7 @@ class _FallDetectionScreenState extends State<FallDetectionScreen> {
 
   PreferredSizeWidget _buildAppBar() {
     return AppBar(
-      title: const Text('Fall Detection'),
+      title: Text(AppLocalizations.of(context).translate('fall_detection_title')),
       elevation: 0,
       actions: [
         BlocBuilder<RealtimeCubit, RealtimeState>(
@@ -102,14 +103,14 @@ class _FallDetectionScreenState extends State<FallDetectionScreen> {
           ),
           const SizedBox(height: 18),
           Text(
-            'Connecting to backend',
+            AppLocalizations.of(context).translate('connecting_to_backend'),
             style: theme.textTheme.titleMedium?.copyWith(
               fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(height: 8),
           Text(
-            'Waiting for realtime stream...',
+            AppLocalizations.of(context).translate('waiting_for_realtime_stream'),
             style: theme.textTheme.bodySmall,
           ),
         ],
@@ -137,7 +138,7 @@ class _FallDetectionScreenState extends State<FallDetectionScreen> {
             const Icon(Icons.emergency, color: Colors.white, size: 40),
             const SizedBox(height: 12),
             Text(
-              'FALL ALERT',
+              AppLocalizations.of(context).translate('fall_alert'),
               style: theme.textTheme.titleLarge?.copyWith(
                 color: Colors.white,
                 fontWeight: FontWeight.w800,
@@ -146,7 +147,7 @@ class _FallDetectionScreenState extends State<FallDetectionScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Immediate assistance recommended',
+              AppLocalizations.of(context).translate('immediate_assistance_recommended'),
               style: theme.textTheme.bodySmall?.copyWith(
                 color: Colors.white.withOpacity(0.9),
               ),

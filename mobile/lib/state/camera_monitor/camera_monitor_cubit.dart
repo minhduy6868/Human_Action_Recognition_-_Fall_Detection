@@ -4,15 +4,15 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../models/realtime_status.dart';
 import '../../services/realtime_stream.dart';
-import '../../services/camera_api.dart';
+import '../../services/sources_api.dart';
 import 'camera_monitor_state.dart';
 
 class CameraMonitorCubit extends Cubit<CameraMonitorState> {
-  CameraMonitorCubit(this._stream, this._cameraApi)
+  CameraMonitorCubit(this._stream, this._sourcesApi)
       : super(CameraMonitorState.initial());
 
   final RealtimeStream _stream;
-  final CameraApi _cameraApi;
+  final SourcesApi _sourcesApi;
   StreamSubscription? _subscription;
   int _connectSession = 0;
 
@@ -21,7 +21,7 @@ class CameraMonitorCubit extends Cubit<CameraMonitorState> {
       logs: _appendSystemLog(state.logs, 'Connecting to backend stream...'),
     ));
     connect();
-    loadCameras();
+    loadSources();
   }
 
   Future<void> connect() async {
@@ -73,20 +73,38 @@ class CameraMonitorCubit extends Cubit<CameraMonitorState> {
     }
   }
 
-  Future<void> loadCameras() async {
-    emit(state.copyWith(isLoadingCameras: true));
+  Future<void> loadSources() async {
+    emit(state.copyWith(isLoadingSources: true));
     try {
-      final response = await _cameraApi.fetchCameras();
+      final sources = await _sourcesApi.listSources();
+      final activeIndex = sources.indexWhere((source) => source.isActive);
+      final selectedIndex = activeIndex >= 0 ? activeIndex : -1;
       emit(state.copyWith(
-        cameras: response.items,
-        activeIndex: response.activeIndex,
-        isLoadingCameras: false,
+        sources: sources,
+        selectedIndex: selectedIndex,
+        isLoadingSources: false,
       ));
     } catch (error) {
       emit(state.copyWith(
-        isLoadingCameras: false,
+        isLoadingSources: false,
         error: error.toString(),
       ));
+    }
+  }
+
+  Future<void> selectSource(int index) async {
+    if (index < 0 || index >= state.sources.length) {
+      return;
+    }
+
+    final source = state.sources[index];
+    emit(state.copyWith(selectedIndex: index, error: null));
+
+    try {
+      await _sourcesApi.activateSource(source.id);
+      await loadSources();
+    } catch (error) {
+      emit(state.copyWith(error: error.toString()));
     }
   }
 

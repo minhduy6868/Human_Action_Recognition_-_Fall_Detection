@@ -11,6 +11,14 @@ class CustomSharedPreferences {
   String? get accessToken => prefs.getString('access_token');
   String? get refreshToken => prefs.getString('refresh_token');
 
+  Map<String, String> get authorizationHeaders {
+    final token = accessToken;
+    if (token == null || token.isEmpty) {
+      return const {};
+    }
+    return {'Authorization': 'Bearer $token'};
+  }
+
   bool get loggedBefore => prefs.getBool('logged_before') ?? false;
   set loggedBefore(bool value) => prefs.setBool('logged_before', value);
 
