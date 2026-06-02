@@ -5,12 +5,18 @@ import uuid
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from sqlalchemy import select
 
 from app.api.response import error_response
 from app.api.v1.router import router as api_v1_router
 from app.core.config import get_settings
 from app.core.logging import configure_logging
+from app.db.database import SessionLocal
+from app.db.models import SourceConnection
 from app.db.seed import init_db, seed_admin
+from app.services.stream_manager import stream_manager
+from app.services.telegram_bot_service import telegram_bot_service
+from app.services.config_publisher import publish_ngrok_to_rtdb
 
 configure_logging()
 _startup_log = logging.getLogger(__name__)
@@ -26,8 +32,6 @@ else:
         "Ultralytics pre-import done in %.1fs (avoids silent delay in stream thread)",
         time.perf_counter() - _t0_ultra,
     )
-
-from app.services.stream_service import stream_service
 
 settings = get_settings()
 
@@ -74,12 +78,30 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 def start_stream() -> None:
     init_db()
     seed_admin()
-    stream_service.start()
+    try:
+        publish_ngrok_to_rtdb()
+    except Exception:
+        _startup_log.exception('Publishing ngrok URL to RTDB failed')
+    telegram_bot_service.start()
+    with SessionLocal() as db:
+        active_sources = db.execute(
+            select(SourceConnection).where(SourceConnection.is_active == True)
+        ).scalars().all()
+
+        for source in active_sources:
+            stream_manager.start(
+                source_id=source.id,
+                user_id=source.user_id,
+                source_type=source.source_type,
+                source_url=source.source_url,
+            )
 
 
 @app.on_event("shutdown")
 def stop_stream() -> None:
-    stream_service.stop()
+    telegram_bot_service.stop()
+    for session in stream_manager.list():
+        stream_manager.stop(session.source_id)
 
 
 @app.get("/health")

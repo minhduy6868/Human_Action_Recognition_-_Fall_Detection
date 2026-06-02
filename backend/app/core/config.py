@@ -64,6 +64,9 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_exp_minutes: int = 15
     refresh_token_exp_days: int = 30
+    google_client_id: str = ""
+    # Comma-separated list of allowed Google OAuth client IDs (e.g. web, android)
+    google_client_ids: str = ""
     seed_admin: bool = True
     seed_admin_email: str = "admin@local"
     seed_admin_password: str = "admin123"
@@ -79,6 +82,11 @@ class Settings(BaseSettings):
     chat_history_retention_days: int = 30
     chat_history_cleanup_interval_ms: int = 6 * 60 * 60 * 1000
     daily_ai_queries_free: int = 20
+    openrouter_api_key: str = ""
+    openrouter_model: str = "baidu/cobuddy:free"
+    openrouter_site_url: str = ""
+    openrouter_app_name: str = "video-ai-detect"
+    openrouter_timeout_seconds: float = 30.0
     alert_check_interval_ms: int = 5000
     abnormal_window_ms: int = 60 * 60 * 1000
     abnormal_min_samples: int = 50
@@ -124,6 +132,21 @@ class Settings(BaseSettings):
     notification_cooldown_ms: int = 15 * 1000
     otp_length: int = 6
     otp_ttl_minutes: int = 10
+    # Telegram notifications
+    enable_telegram_notifications: bool = False
+    telegram_bot_token: str = ""
+    # Comma-separated chat ids to send notifications to (supports numbers or @channel)
+    telegram_chat_ids: str = ""
+    # Firebase Realtime Database URL (e.g. https://<project>.firebaseio.com/ or .asia-southeast1.firebasedatabase.app/)
+    firebase_rtdb_url: str = "https://love-app-19405-default-rtdb.asia-southeast1.firebasedatabase.app"
+    # Optional secret or auth param to append when writing to RTDB, e.g. '?auth=...'
+    firebase_rtdb_auth_param: str = ""
+    # Optional ngrok public url, can be provided via env when automatic detection is not possible
+    ngrok_public_url: str = ""
+    # Automatically start ngrok tunnel when not running (requires pyngrok)
+    enable_auto_ngrok: bool = True
+    # Optional ngrok authtoken to configure pyngrok (if provided)
+    ngrok_authtoken: str = ""
 
     model_config = SettingsConfigDict(
         env_file=os.path.join(os.path.dirname(__file__), "../../.env"),
