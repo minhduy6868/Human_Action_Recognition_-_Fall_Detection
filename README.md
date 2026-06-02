@@ -138,6 +138,7 @@ CAMERA_SOURCE=file
 VIDEO_FILE_PATH=d:/flutter/video-ai-detect/backend/fall5.mp4
 LOOP_VIDEO_FILE=true
 ENABLE_STREAM=true
+GOOGLE_CLIENT_ID=your-google-oauth-client-id.apps.googleusercontent.com
 ```
 
 To use a different video or camera:
@@ -152,7 +153,7 @@ To use a different video or camera:
 
 ```powershell
 cd backend
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+..\.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
 **Expected Output:**
@@ -224,6 +225,8 @@ The app is pre-configured to connect to `192.168.1.11:8000`. If your IP is diffe
 
 **File**: `mobile/lib/core/app_config.dart`
 
+Also set `GOOGLE_SERVER_CLIENT_ID` in your Flutter build/run config to the web OAuth client ID that matches the Google Sign-In setup.
+
 ```dart
 switch (defaultTargetPlatform) {
   case TargetPlatform.android:
@@ -253,6 +256,56 @@ Select your device when prompted. The app will:
 
 ---
 
+## 🔔 Notifications Setup
+
+### Telegram fall alerts with image
+
+The backend can send fall alerts to Telegram using the bot token you created with BotFather. The backend now polls Telegram automatically when it starts, so the bot runs together with the backend process. When a frame image is available, it sends the snapshot as a photo.
+
+Set these values in `backend/.env`:
+
+```env
+ENABLE_TELEGRAM_NOTIFICATIONS=true
+TELEGRAM_BOT_TOKEN=your_bot_token_here
+TELEGRAM_CHAT_IDS=123456789,@your_channel_or_group
+```
+
+Notes:
+- Use a comma-separated list for multiple chat IDs.
+- `TELEGRAM_CHAT_IDS` can contain numeric user/chat IDs or channel/group usernames.
+- Keep the bot token out of source control and rotate it if it was shared publicly.
+- Each Telegram user must open the bot and press `/start` once so the backend can receive and store their chat ID automatically.
+- The backend keeps Telegram subscribers in the `telegram_subscribers` table and will send alerts to every active subscriber.
+- If you want to inspect the currently stored chat IDs, you can still run `python backend/scripts/telegram_chat_ids.py` as a fallback helper.
+- If you want per-user routing by email/password, that is a separate account-linking flow; the current backend uses the Telegram chat IDs you configure in `.env`.
+
+### Push notifications with Firebase Cloud Messaging
+
+The backend already supports FCM delivery. Configure these values in `backend/.env`:
+
+```env
+ENABLE_PUSH_NOTIFICATIONS=true
+FCM_CREDENTIALS_PATH=D:/path/to/firebase-service-account.json
+FCM_TOPIC=fall-alerts
+```
+
+Setup checklist:
+1. Create a Firebase project and add your Android/iOS app.
+2. Download the Firebase service account JSON for the backend and set `FCM_CREDENTIALS_PATH`.
+3. Add `google-services.json` to Android and `GoogleService-Info.plist` to iOS if you want the Flutter client to receive push messages directly.
+4. In Flutter, the app now requests notification permission and registers the FCM token automatically after login.
+5. Restart the backend after changing `.env`.
+
+The only manual Flutter steps left are:
+1. Run `flutter pub get` after the dependency update.
+2. Add `google-services.json` to `mobile/android/app/`.
+3. If you target iOS, add `GoogleService-Info.plist` to `mobile/ios/Runner/`.
+4. If Firebase asks for app identifiers, create them in Firebase Console and match the bundle/application IDs already used by your app.
+
+If you only need Telegram alerts for now, you can leave FCM enabled but unconfigured; the backend will skip push delivery when credentials are missing.
+
+---
+
 ## 🎬 Demo Scenarios
 
 ### Scenario 1: Video File (fall5.mp4)
@@ -262,7 +315,7 @@ Select your device when prompted. The app will:
 ```powershell
 # Terminal 1: Backend
 cd backend
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+..\.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 # Terminal 2: Mobile app
 cd mobile
@@ -387,7 +440,7 @@ Ensure you're in the `backend/` directory when running uvicorn:
 
 ```powershell
 cd backend
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+..\.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
 ### App can't connect to backend
@@ -421,9 +474,9 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 Use a process manager instead of `--reload`:
 
-```bash
+```powershell
 # Install supervisor or systemd
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
+..\.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
 ```
 
 ### Production Mobile
