@@ -8,7 +8,7 @@ import '../state/auth/auth_cubit.dart';
 import '../state/app_settings_cubit.dart';
 import '../services/push_notification_service.dart';
 import '../services/vip_upgrade_launcher.dart';
-import '../shared_customization/localization/app_localizations.dart';
+import '../core/l10n/app_localizations.dart';
 import './dashboard_screen.dart';
 import './analytics_screen.dart';
 import './ai_chat_screen.dart';

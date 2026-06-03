@@ -16,6 +16,12 @@ backend/.env
 # Dart/Flutter tool directories and build
 mobile/.dart_tool/
 mobile/build/
+mobile/.gradle-home/
+
+# Local env (never commit secrets)
+.env
+**/.env
+!**/.env.example
 
 # OS files
 .DS_Store

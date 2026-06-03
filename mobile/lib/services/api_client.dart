@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
-import '../shared_customization/helpers/utilizations/storages.dart';
+import '../core/storage/app_storage.dart';
 
 class ApiClient {
   ApiClient(this.baseUrl, this.storage);

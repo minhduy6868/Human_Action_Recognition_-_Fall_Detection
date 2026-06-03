@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import '../shared_customization/helpers/utilizations/storages.dart';
+import '../core/storage/app_storage.dart';
 import 'app_settings_state.dart';
 
 class AppSettingsCubit extends Cubit<AppSettingsState> {

@@ -3,8 +3,8 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../services/auth_api.dart';
 import '../../services/push_notification_service.dart';
 import '../../services/sources_api.dart';
-import '../../shared_customization/helpers/utilizations/storages.dart';
-import '../../get_it_dependencies.dart';
+import '../../core/storage/app_storage.dart';
+import '../../core/di/injection.dart';
 import 'auth_state.dart';
 
 class AuthCubit extends Cubit<AuthState> {

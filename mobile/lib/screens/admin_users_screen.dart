@@ -4,7 +4,7 @@ import 'package:get_it/get_it.dart';
 
 import '../models/user_profile.dart';
 import '../services/admin_api.dart';
-import '../shared_customization/localization/app_localizations.dart';
+import '../core/l10n/app_localizations.dart';
 import '../state/auth/auth_cubit.dart';
 
 class AdminUsersScreen extends StatefulWidget {

@@ -3,7 +3,7 @@ import 'package:get_it/get_it.dart';
 
 import '../models/user_profile.dart';
 import '../services/admin_api.dart';
-import '../shared_customization/localization/app_localizations.dart';
+import '../core/l10n/app_localizations.dart';
 
 class AdminOverviewTab extends StatefulWidget {
   const AdminOverviewTab({super.key});

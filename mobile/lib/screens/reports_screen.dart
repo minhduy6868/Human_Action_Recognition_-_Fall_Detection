@@ -3,7 +3,7 @@ import 'package:get_it/get_it.dart';
 import 'package:intl/intl.dart';
 
 import '../services/monitoring_api.dart';
-import '../shared_customization/localization/app_localizations.dart';
+import '../core/l10n/app_localizations.dart';
 
 class ReportsScreen extends StatefulWidget {
   const ReportsScreen({super.key});

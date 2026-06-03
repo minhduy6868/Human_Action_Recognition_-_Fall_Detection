@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import '../shared_customization/localization/app_localizations.dart';
+import '../core/l10n/app_localizations.dart';
 import '../state/auth/auth_cubit.dart';
 import 'admin_overview_tab.dart';
 import 'admin_users_screen.dart';

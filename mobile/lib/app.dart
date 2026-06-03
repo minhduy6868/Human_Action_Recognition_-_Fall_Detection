@@ -2,24 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
-import 'get_it_dependencies.dart';
-import 'state/auth/auth_cubit.dart';
-import 'state/auth/auth_state.dart';
-import 'screens/login_screen.dart';
-import 'screens/register_screen.dart';
-import 'screens/forgot_password_screen.dart';
-import 'screens/home_shell.dart';
-import 'screens/sources_screen.dart';
-import 'screens/history_screen.dart';
-import 'screens/logs_screen.dart';
-import 'screens/reports_screen.dart';
+import 'core/di/injection.dart';
+import 'core/l10n/app_localizations.dart';
+import 'core/routes/app_routes.dart';
+import 'core/theme/app_theme.dart';
 import 'screens/admin_shell.dart';
-import 'state/camera_monitor/camera_monitor_cubit.dart';
-import 'state/fall_detection/realtime_cubit.dart';
-import 'shared_customization/localization/app_localizations.dart';
-import 'shared_customization/theme/app_theme.dart';
+import 'screens/home_shell.dart';
+import 'screens/login_screen.dart';
 import 'state/app_settings_cubit.dart';
 import 'state/app_settings_state.dart';
+import 'state/auth/auth_cubit.dart';
+import 'state/auth/auth_state.dart';
+import 'state/camera_monitor/camera_monitor_cubit.dart';
+import 'state/fall_detection/realtime_cubit.dart';
 
 class App extends StatelessWidget {
   const App({super.key});
@@ -54,14 +49,7 @@ class App extends StatelessWidget {
               Locale('en'),
               Locale('vi'),
             ],
-            routes: {
-              '/register': (_) => const RegisterScreen(),
-              '/forgot': (_) => const ForgotPasswordScreen(),
-              '/sources': (_) => const SourcesScreen(),
-              '/history': (_) => const HistoryScreen(),
-              '/logs': (_) => const LogsScreen(),
-              '/reports': (_) => const ReportsScreen(),
-            },
+            routes: AppRoutes.routes,
             home: BlocBuilder<AuthCubit, AuthState>(
               builder: (context, authState) {
                 if (authState.status == AuthStatus.loading) {
@@ -116,4 +104,3 @@ class _SplashScreen extends StatelessWidget {
     );
   }
 }
-
