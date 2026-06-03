@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../models/person_action.dart';
-import '../../shared_customization/localization/app_localizations.dart';
+import '../../core/l10n/app_localizations.dart';
 
 class PeopleListWidget extends StatelessWidget {
   const PeopleListWidget({

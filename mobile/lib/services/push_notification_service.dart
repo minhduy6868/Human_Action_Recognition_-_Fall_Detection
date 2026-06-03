@@ -4,7 +4,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 
-import '../shared_customization/helpers/utilizations/storages.dart';
+import '../core/storage/app_storage.dart';
 import 'auth_api.dart';
 
 class PushNotificationService {

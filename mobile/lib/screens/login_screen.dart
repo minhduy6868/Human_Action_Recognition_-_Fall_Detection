@@ -3,11 +3,11 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
 import '../core/app_config.dart';
-import '../shared_customization/auth/auth_styles.dart';
+import '../core/auth/auth_styles.dart';
 import '../state/app_settings_cubit.dart';
 import '../state/auth/auth_cubit.dart';
 import '../state/auth/auth_state.dart';
-import '../shared_customization/localization/app_localizations.dart';
+import '../core/l10n/app_localizations.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});

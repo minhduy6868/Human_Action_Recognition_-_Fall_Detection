@@ -1,5 +1,10 @@
-import 'main_development.dart' as dev;
+import 'package:flutter/material.dart';
 
-void main() {
-  dev.main();
+import 'app.dart';
+import 'core/di/injection.dart';
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await initDependencies();
+  runApp(const App());
 }

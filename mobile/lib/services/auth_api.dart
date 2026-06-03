@@ -1,6 +1,6 @@
 import '../models/auth_tokens.dart';
 import '../models/user_profile.dart';
-import '../shared_customization/helpers/utilizations/storages.dart';
+import '../core/storage/app_storage.dart';
 import 'api_client.dart';
 
 class AuthApi {

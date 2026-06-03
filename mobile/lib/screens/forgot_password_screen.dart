@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:get_it/get_it.dart';
 
 import '../services/auth_api.dart';
-import '../shared_customization/auth/auth_styles.dart';
+import '../core/auth/auth_styles.dart';
 import 'reset_password_screen.dart';
-import '../shared_customization/localization/app_localizations.dart';
+import '../core/l10n/app_localizations.dart';
 
 class ForgotPasswordScreen extends StatefulWidget {
   const ForgotPasswordScreen({super.key});

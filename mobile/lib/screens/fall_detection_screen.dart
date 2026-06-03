@@ -3,8 +3,8 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../state/fall_detection/realtime_cubit.dart';
 import '../state/fall_detection/realtime_state.dart';
-import '../shared_customization/localization/app_localizations.dart';
-import '../widgets/fall_detection/index.dart';
+import '../core/l10n/app_localizations.dart';
+import '../widgets/monitoring/index.dart';
 
 class FallDetectionScreen extends StatefulWidget {
   const FallDetectionScreen({super.key});

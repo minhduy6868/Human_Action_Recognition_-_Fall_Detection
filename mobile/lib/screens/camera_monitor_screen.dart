@@ -4,11 +4,11 @@ import '../widgets/safe_mjpeg_view.dart';
 import 'package:get_it/get_it.dart';
 
 import '../core/backend_runtime_config.dart';
-import '../shared_customization/helpers/utilizations/storages.dart';
-import '../shared_customization/localization/app_localizations.dart';
+import '../core/storage/app_storage.dart';
+import '../core/l10n/app_localizations.dart';
 import '../state/camera_monitor/camera_monitor_cubit.dart';
 import '../state/camera_monitor/camera_monitor_state.dart';
-import '../widgets/fall_detection/connection_status.dart';
+import '../widgets/monitoring/connection_status.dart';
 
 class CameraMonitorScreen extends StatefulWidget {
   const CameraMonitorScreen({super.key});
