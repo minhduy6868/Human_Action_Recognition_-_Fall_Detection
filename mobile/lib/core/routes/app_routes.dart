@@ -11,6 +11,7 @@ import '../../screens/forgot_password_screen.dart';
 import '../../screens/history_screen.dart';
 import '../../screens/logs_screen.dart';
 import '../../screens/register_screen.dart';
+import '../../screens/chat_history_screen.dart';
 import '../../screens/reports_screen.dart';
 import '../../screens/sources_screen.dart';
 import '../../state/camera_monitor/camera_monitor_cubit.dart';
@@ -25,6 +26,7 @@ class AppRoutes {
   static const String history = '/history';
   static const String logs = '/logs';
   static const String reports = '/reports';
+  static const String chatHistory = '/chat-history';
   static const String register = '/register';
   static const String forgot = '/forgot';
   static const String fallDetection = '/fall-detection';
@@ -38,6 +40,7 @@ class AppRoutes {
         history: (_) => const HistoryScreen(),
         logs: (_) => const LogsScreen(),
         reports: (_) => const ReportsScreen(),
+        chatHistory: (_) => const ChatHistoryScreen(),
         register: (_) => const RegisterScreen(),
         forgot: (_) => const ForgotPasswordScreen(),
         fallDetection: (_) => BlocProvider(

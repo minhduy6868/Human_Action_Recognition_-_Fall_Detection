@@ -1,6 +1,6 @@
-# Video AI Detect — Mobile (Flutter)
+# Ai camcheck — Mobile (Flutter)
 
-Ứng dụng Flutter kết nối backend FastAPI: đăng nhập, quản lý nguồn video, xem realtime (WebSocket + MJPEG), phân tích hành vi / té ngã, AI chat, và kênh admin riêng.
+Ứng dụng **Ai camcheck** kết nối backend FastAPI: đăng nhập, chọn nguồn camera, MJPEG theo nguồn, phân tích/báo cáo theo từng nguồn, AI đọc log phát hiện, VIP nhiều camera chạy song song.
 
 ---
 
@@ -76,9 +76,10 @@ lib/
 │
 ├── state/                    # BLoC / Cubit
 │   ├── auth/
+│   ├── selected_source/      # Nguồn đang xem (Home, AI, Analytics, …)
 │   ├── app_settings_cubit.dart
-│   ├── fall_detection/       # RealtimeCubit (WebSocket trạng thái)
-│   └── camera_monitor/       # CameraMonitorCubit (MJPEG + nguồn)
+│   ├── fall_detection/       # RealtimeCubit (màn Fall monitor)
+│   └── camera_monitor/ (MJPEG + nguồn)
 │
 ├── screens/                  # UI theo màn hình
 │   ├── login_screen.dart, register_screen.dart, ...
@@ -129,8 +130,8 @@ flowchart TD
 3. **Phân quyền**:
    - `role == admin` → `AdminShell` (không đi luồng user).
    - User thường → `HomeShell` (4 tab).
-4. **Realtime**: `RealtimeCubit` kết nối WebSocket; `DashboardScreen` chỉ `connect()` khi tab Home đang active (tránh lỗi socket đóng).
-5. **VIP**: trong Settings, mở Telegram upgrade (`VipUpgradeLauncher`).
+4. **Nguồn đang xem**: `SelectedSourceCubit` (lưu `selected_source_id`) — chip trên Home đổi nguồn → MJPEG, status poll, history/reports/AI theo `source_id`.
+5. **VIP**: bật nhiều nguồn trong `/sources`; Home hiển thị stream của nguồn đang chọn. Nâng cấp qua Telegram (`VipUpgradeLauncher`).
 
 ---
 
@@ -168,10 +169,10 @@ flutter run --dart-define=BACKEND_CONFIG_URL=https://YOUR_PROJECT.firebaseio.com
 
 | Tab | Screen | Ghi chú |
 |-----|--------|---------|
-| Home | `DashboardScreen` | Trạng thái realtime, MJPEG, fall events |
-| Analytics | `AnalyticsScreen` | Thống kê / insight |
-| AI | `AiChatScreen` | Hỏi đáp theo cửa sổ thời gian |
-| Settings | `_SettingsPanel` | Theme, ngôn ngữ, nguồn, VIP Telegram |
+| Home | `DashboardScreen` | Chip chọn nguồn, MJPEG + status theo nguồn, timeline/báo cáo |
+| Analytics | `AnalyticsScreen` | Thống kê theo nguồn đang chọn |
+| AI | `AiChatScreen` | Hỏi đáp theo log + nguồn đang chọn |
+| Settings | `_SettingsPanel` | Theme, ngôn ngữ, lịch sử/báo cáo/chat, nguồn, VIP |
 
 ### Named routes (`AppRoutes`)
 
@@ -179,8 +180,8 @@ flutter run --dart-define=BACKEND_CONFIG_URL=https://YOUR_PROJECT.firebaseio.com
 |-------|----------|
 | `/sources` | Quản lý nguồn video |
 | `/history` | Lịch sử |
-| `/logs` | Logs detection |
 | `/reports` | Báo cáo |
+| `/chat-history` | Lịch sử hội thoại AI |
 | `/camera-monitor` | Giám sát camera + MJPEG |
 | `/fall-detection` | Màn hình fall chi tiết |
 | `/analytics` | Analytics (từ dashboard) |
@@ -200,9 +201,10 @@ flutter run --dart-define=BACKEND_CONFIG_URL=https://YOUR_PROJECT.firebaseio.com
 | Cubit | File | Trách nhiệm |
 |-------|------|-------------|
 | `AuthCubit` | `state/auth/` | Login, logout, bootstrap, `refreshProfile()` |
+| `SelectedSourceCubit` | `state/selected_source/` | Nguồn focus toàn app (SharedPreferences) |
 | `AppSettingsCubit` | `state/app_settings_cubit.dart` | Theme sáng/tối, locale EN/VI |
-| `RealtimeCubit` | `state/fall_detection/` | WS realtime, reconnect có kiểm soát |
-| `CameraMonitorCubit` | `state/camera_monitor/` | Nguồn + stream + log panel |
+| `RealtimeCubit` | `state/fall_detection/` | WS (màn Fall monitor) |
+| `CameraMonitorCubit` | `state/camera_monitor/` | Nguồn + stream panel |
 
 **GetIt** (`core/di/injection.dart`): singleton cho API/config, factory cho cubit (mỗi lần mở route có thể tạo instance mới).
 

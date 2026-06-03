@@ -1,9 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:get_it/get_it.dart';
 import 'package:intl/intl.dart';
 
-import '../services/monitoring_api.dart';
 import '../core/l10n/app_localizations.dart';
+import '../models/source.dart';
+import '../services/monitoring_api.dart';
+import '../services/sources_api.dart';
+import '../state/auth/auth_cubit.dart';
+import '../state/selected_source/selected_source_cubit.dart';
+import '../state/selected_source/selected_source_state.dart';
 
 class AnalyticsScreen extends StatefulWidget {
   const AnalyticsScreen({super.key});
@@ -13,484 +19,320 @@ class AnalyticsScreen extends StatefulWidget {
 }
 
 class _AnalyticsScreenState extends State<AnalyticsScreen> {
-  final _api = GetIt.instance<MonitoringApi>();
-  List<dynamic> _history = [];
+  final _monitoring = GetIt.instance<MonitoringApi>();
+  final _sourcesApi = GetIt.instance<SourcesApi>();
+
+  List<Source> _sources = [];
+  List<Map<String, dynamic>> _logs = [];
   bool _loading = true;
+  String? _error;
+  String? _sourceId;
+  int _hours = 24;
+  bool _isVip = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final plan = context.read<AuthCubit>().state.user?.plan ?? 'free';
+    _isVip = plan.toLowerCase() == 'vip';
+  }
 
   @override
   void initState() {
     super.initState();
-    _loadAnalytics();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final selected = context.read<SelectedSourceCubit>().state.selectedSourceId;
+      _sourceId = selected;
+      _load();
+    });
   }
 
-  Future<void> _loadAnalytics() async {
-    if (mounted) setState(() => _loading = true);
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
-      final results = await Future.wait([
-        _api.getHistory(limit: 2000),
-        _api.getReports(limit: 50),
-        _api.getLogs(limit: 50),
-      ]);
+      final sources = await _sourcesApi.listSources();
+      final now = DateTime.now().toUtc();
+      final from = now.subtract(Duration(hours: _hours)).millisecondsSinceEpoch;
+      final logs = await _monitoring.getLogs(
+        limit: _isVip ? 2000 : 800,
+        sourceId: _sourceId,
+        fromMs: from,
+        toMs: now.millisecondsSinceEpoch,
+      );
       if (!mounted) return;
       setState(() {
-        _history = results[0];
+        _sources = sources;
+        _logs = logs.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
       });
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
-      }
+      if (!mounted) return;
+      setState(() => _error = '$e');
     } finally {
       if (mounted) setState(() => _loading = false);
     }
   }
 
-  Map<String, int> _countActionsByType() {
-    final counts = <String, int>{};
-    for (final item in _history) {
-      final action = ((item as Map<String, dynamic>)['action'] ?? 'unknown').toString();
-      counts[action] = (counts[action] ?? 0) + 1;
+  String _label(String? id) {
+    final loc = AppLocalizations.of(context);
+    if (id == null) return loc.translate('all_sources');
+    for (final s in _sources) {
+      if (s.id == id) return s.name.isEmpty ? s.id : s.name;
     }
-    return counts;
+    return id;
   }
 
-  int _countFalls() {
-    return _history.where((item) {
-      final map = item as Map<String, dynamic>;
-      return map['fall'] == true || (map['action'] ?? '').toString().toLowerCase() == 'fall';
-    }).length;
-  }
+  int _falls() => _logs.where((l) => l['fall'] == true).length;
 
-  DateTime _readTimestamp(Map<String, dynamic> item) {
-    final raw = item['timestamp_ms'] ?? item['generated_at_ms'] ?? item['created_at_ms'] ?? item['timestamp'];
-    if (raw is int) return DateTime.fromMillisecondsSinceEpoch(raw);
-    if (raw is num) return DateTime.fromMillisecondsSinceEpoch(raw.toInt());
-    if (raw is String) {
-      final parsedInt = int.tryParse(raw);
-      if (parsedInt != null) return DateTime.fromMillisecondsSinceEpoch(parsedInt);
-      final parsedDate = DateTime.tryParse(raw);
-      if (parsedDate != null) return parsedDate;
+  Map<String, int> _actions() {
+    final m = <String, int>{};
+    for (final l in _logs) {
+      final a = (l['action'] ?? 'unknown').toString();
+      m[a] = (m[a] ?? 0) + 1;
     }
-    return DateTime.now();
+    return m;
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final loc = AppLocalizations.of(context);
-    return Scaffold(
-      extendBodyBehindAppBar: true,
+    final actions = _actions();
+    final topActions = actions.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+
+    return BlocListener<SelectedSourceCubit, SelectedSourceState>(
+      listenWhen: (prev, next) => prev.selectedSourceId != next.selectedSourceId,
+      listener: (_, state) {
+        setState(() => _sourceId = state.selectedSourceId);
+        _load();
+      },
+      child: Scaffold(
       appBar: AppBar(
-        title: Text(loc.translate('summary')),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
+        title: Text(loc.translate('analytics')),
         actions: [
-          IconButton(onPressed: _loadAnalytics, icon: const Icon(Icons.refresh_rounded)),
+          IconButton(icon: const Icon(Icons.refresh), onPressed: _load),
         ],
       ),
-      body: Stack(
-        children: [
-          _Backdrop(theme: theme),
-          SafeArea(
-            child: RefreshIndicator(
-              onRefresh: _loadAnalytics,
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                children: [
-                  _HeroCard(total: _history.length, falls: _countFalls()),
-                  const SizedBox(height: 16),
-                  if (_loading)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 40),
-                      child: Center(child: CircularProgressIndicator()),
-                    )
-                  else ...[
-                    Row(
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _error != null
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        Expanded(
-                          child: _StatCard(
-                            title: 'Total events',
-                            value: '${_history.length}',
-                            icon: Icons.event_rounded,
-                            color: const Color(0xFF1FBF9B),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _StatCard(
-                            title: 'Falls',
-                            value: '${_countFalls()}',
-                            icon: Icons.warning_rounded,
-                            color: const Color(0xFFF36B4E),
-                          ),
+                        Text(_error!, textAlign: TextAlign.center),
+                        const SizedBox(height: 12),
+                        FilledButton(
+                          onPressed: _load,
+                          child: Text(loc.translate('retry')),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _StatCard(
-                            title: 'Actions',
-                            value: '${_countActionsByType().length}',
-                            icon: Icons.timeline_rounded,
-                            color: const Color(0xFF3BC9DB),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _StatCard(
-                            title: 'Last updated',
-                            value: _history.isEmpty
-                                ? '--'
-                                : DateFormat('HH:mm').format(_readTimestamp(_history.first as Map<String, dynamic>)),
-                            icon: Icons.schedule_rounded,
-                            color: const Color(0xFFF1A53A),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
+                  ),
+                )
+              : ListView(
+                  padding: const EdgeInsets.all(12),
+                  children: [
                     Text(
-                      loc.translate('summary'),
-                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+                      _isVip
+                          ? loc.translate('analytics_vip_title')
+                          : loc.translate('analytics_free_title'),
+                      style: Theme.of(context).textTheme.titleSmall,
                     ),
-                    const SizedBox(height: 12),
-                    _buildActionChart(),
-                    const SizedBox(height: 20),
-                    Row(
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
                       children: [
-                        Expanded(
-                          child: Text(
-                            loc.translate('history'),
-                            style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
-                          ),
+                        ChoiceChip(
+                          label: Text(loc.translate('window_24h')),
+                          selected: _hours == 24,
+                          onSelected: (_) {
+                            setState(() => _hours = 24);
+                            _load();
+                          },
                         ),
-                        TextButton(
-                          onPressed: () => Navigator.of(context).pushNamed('/history'),
-                          child: Text(loc.translate('history')),
+                        ChoiceChip(
+                          label: Text(loc.translate('window_7d')),
+                          selected: _hours == 168,
+                          onSelected: (_) {
+                            setState(() => _hours = 168);
+                            _load();
+                          },
                         ),
                       ],
                     ),
                     const SizedBox(height: 8),
-                    ..._buildRecentEventsList(),
-                  ],
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildActionChart() {
-    final loc = AppLocalizations.of(context);
-    final counts = _countActionsByType();
-    if (counts.isEmpty) {
-      return Card(
-        elevation: 0,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Center(
-            child: Text(
-              loc.translate('no_data'),
-              style: TextStyle(color: Colors.grey[600]),
-            ),
-          ),
-        ),
-      );
-    }
-
-    final total = counts.values.fold<int>(0, (sum, count) => sum + count);
-    final sorted = counts.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
-
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            ...sorted.map((entry) {
-              final percentage = (entry.value / total * 100).toStringAsFixed(1);
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
                       children: [
-                        Expanded(
-                          child: Text(
-                            loc.actionLabel(entry.key),
-                            style: const TextStyle(fontWeight: FontWeight.w600),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                        FilterChip(
+                          label: Text(loc.translate('all_sources')),
+                          selected: _sourceId == null,
+                          onSelected: (_) {
+                            setState(() => _sourceId = null);
+                            _load();
+                          },
                         ),
-                        Text(
-                          '$percentage%',
-                          style: TextStyle(
-                            color: Colors.grey[600],
-                            fontSize: 12,
+                        ..._sources.map(
+                          (s) => FilterChip(
+                            label: Text(s.name.isEmpty ? s.id : s.name),
+                            selected: _sourceId == s.id,
+                            onSelected: (_) {
+                              setState(() => _sourceId = s.id);
+                              _load();
+                            },
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 6),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(4),
-                      child: LinearProgressIndicator(
-                        value: entry.value / total,
-                        minHeight: 8,
-                        backgroundColor: Colors.grey[200],
-                        valueColor: AlwaysStoppedAnimation<Color>(
-                          _getColorForAction(entry.key),
+                    const SizedBox(height: 12),
+                    if (_logs.isEmpty)
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(20),
+                          child: Column(
+                            children: [
+                              Text(loc.translate('analytics_empty_title')),
+                              const SizedBox(height: 8),
+                              Text(
+                                loc.translate('analytics_empty_with_sources'),
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: 12),
+                              FilledButton(
+                                onPressed: () =>
+                                    Navigator.pushNamed(context, '/sources'),
+                                child: Text(loc.translate('manage_sources')),
+                              ),
+                            ],
+                          ),
                         ),
+                      )
+                    else ...[
+                      Row(
+                        children: [
+                          _stat(context, '${_logs.length}', loc.translate('total_events')),
+                          const SizedBox(width: 8),
+                          _stat(context, '${_falls()}', loc.translate('fall_detected')),
+                          const SizedBox(width: 8),
+                          _stat(context, _label(_sourceId), loc.translate('source_field')),
+                        ],
                       ),
-                    ),
+                      if (_isVip && _sources.length > 1) ...[
+                        const SizedBox(height: 12),
+                        Text(loc.translate('analytics_per_source'),
+                            style: const TextStyle(fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 6),
+                        ..._sources.map((s) {
+                          final count = _logs
+                              .where((l) => l['source_id'] == s.id)
+                              .length;
+                          return ListTile(
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(s.name.isEmpty ? s.id : s.name),
+                            trailing: Text('$count'),
+                            onTap: () {
+                              setState(() => _sourceId = s.id);
+                              _load();
+                            },
+                          );
+                        }),
+                      ],
+                      const SizedBox(height: 12),
+                      Text(loc.translate('action_distribution'),
+                          style: const TextStyle(fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 6),
+                      ...topActions.take(5).map((e) {
+                        final total = _logs.length;
+                        final p = total == 0 ? 0.0 : e.value / total;
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 6),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                flex: 2,
+                                child: Text(loc.actionLabel(e.key)),
+                              ),
+                              Expanded(
+                                flex: 3,
+                                child: LinearProgressIndicator(value: p),
+                              ),
+                              const SizedBox(width: 8),
+                              Text('${e.value}'),
+                            ],
+                          ),
+                        );
+                      }),
+                      const SizedBox(height: 12),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(loc.translate('recent_detections'),
+                              style: const TextStyle(fontWeight: FontWeight.w600)),
+                          TextButton(
+                            onPressed: () =>
+                                Navigator.pushNamed(context, '/history'),
+                            child: Text(loc.translate('view_full_history')),
+                          ),
+                        ],
+                      ),
+                      ..._logs.take(6).map((log) {
+                        final ts = log['timestamp_ms'];
+                        final dt = ts is int
+                            ? DateTime.fromMillisecondsSinceEpoch(ts)
+                            : DateTime.now();
+                        final action = (log['action'] ?? '?').toString();
+                        return ListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          leading: Icon(
+                            log['fall'] == true
+                                ? Icons.warning_amber
+                                : Icons.circle,
+                            size: 10,
+                            color: log['fall'] == true
+                                ? Colors.red
+                                : Colors.grey,
+                          ),
+                          title: Text(loc.actionLabel(action)),
+                          subtitle: Text(
+                            '${_label((log['source_id'] ?? '').toString())} · ${DateFormat('dd/MM HH:mm').format(dt)}',
+                          ),
+                        );
+                      }),
+                    ],
                   ],
                 ),
-              );
-            }),
-          ],
-        ),
       ),
     );
   }
 
-  List<Widget> _buildRecentEventsList() {
-    final loc = AppLocalizations.of(context);
-    if (_history.isEmpty) {
-      return [
-        Card(
-          elevation: 0,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Center(
-              child: Text(
-                loc.translate('no_data'),
-                style: TextStyle(color: Colors.grey[600]),
-              ),
-            ),
+  Widget _stat(BuildContext context, String value, String label) {
+    return Expanded(
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+          child: Column(
+            children: [
+              Text(value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleMedium
+                      ?.copyWith(fontWeight: FontWeight.bold)),
+              Text(label,
+                  style: Theme.of(context).textTheme.bodySmall,
+                  textAlign: TextAlign.center),
+            ],
           ),
-        ),
-      ];
-    }
-
-    return _history.take(10).map((item) {
-      final event = item as Map<String, dynamic>;
-      final action = (event['action'] ?? 'unknown').toString();
-      final trackId = (event['track_id'] ?? 'N/A').toString();
-      final timestamp = _readTimestamp(event);
-
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 10),
-        child: Card(
-          elevation: 0,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-          child: ListTile(
-            leading: Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                color: _getColorForAction(action).withOpacity(0.12),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Icon(
-                _getIconForAction(action),
-                color: _getColorForAction(action),
-              ),
-            ),
-            title: Text(loc.actionLabel(action)),
-            subtitle: Text('Track: $trackId • ${DateFormat('dd/MM HH:mm').format(timestamp)}'),
-          ),
-        ),
-      );
-    }).toList();
-  }
-
-  Color _getColorForAction(String action) {
-    switch (action.toLowerCase()) {
-      case 'walking':
-        return const Color(0xFF3BC9DB);
-      case 'standing':
-        return const Color(0xFF1FBF9B);
-      case 'sitting':
-        return const Color(0xFFF1A53A);
-      case 'lying':
-        return const Color(0xFF0B2E4C);
-      case 'fall':
-        return const Color(0xFFF36B4E);
-      default:
-        return const Color(0xFF7B8AA0);
-    }
-  }
-
-  IconData _getIconForAction(String action) {
-    switch (action.toLowerCase()) {
-      case 'walking':
-        return Icons.directions_walk_rounded;
-      case 'standing':
-        return Icons.accessibility_rounded;
-      case 'sitting':
-        return Icons.chair_rounded;
-      case 'lying':
-        return Icons.bed_rounded;
-      case 'fall':
-        return Icons.warning_rounded;
-      default:
-        return Icons.camera_rounded;
-    }
-  }
-}
-
-class _HeroCard extends StatelessWidget {
-  const _HeroCard({required this.total, required this.falls});
-
-  final int total;
-  final int falls;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Card(
-      elevation: 0,
-      clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      child: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xFF0B2E4C), Color(0xFF124B6C)],
-          ),
-        ),
-        padding: const EdgeInsets.all(20),
-        child: Row(
-          children: [
-            Container(
-              width: 56,
-              height: 56,
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.14),
-                borderRadius: BorderRadius.circular(18),
-              ),
-              child: const Icon(Icons.analytics_rounded, color: Colors.white, size: 30),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Analytics', style: theme.textTheme.titleLarge?.copyWith(color: Colors.white, fontWeight: FontWeight.w800)),
-                  const SizedBox(height: 6),
-                  Text('Báo cáo phân phối hành động và sự kiện gần nhất từ database.', style: theme.textTheme.bodyMedium?.copyWith(color: Colors.white.withOpacity(0.88))),
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      _Badge(label: '$total events', color: Colors.white),
-                      _Badge(label: '$falls falls', color: const Color(0xFFF36B4E)),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _Badge extends StatelessWidget {
-  const _Badge({required this.label, required this.color});
-
-  final String label;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    final light = color == Colors.white;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: light ? Colors.white : color.withOpacity(0.16),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(label, style: TextStyle(color: light ? const Color(0xFF0B2E4C) : color, fontWeight: FontWeight.w700)),
-    );
-  }
-}
-
-class _StatCard extends StatelessWidget {
-  const _StatCard({required this.title, required this.value, required this.icon, required this.color});
-
-  final String title;
-  final String value;
-  final IconData icon;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                color: color.withOpacity(0.12),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Icon(icon, color: color),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title, style: theme.textTheme.bodySmall),
-                  const SizedBox(height: 4),
-                  Text(value, style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _Backdrop extends StatelessWidget {
-  const _Backdrop({required this.theme});
-
-  final ThemeData theme;
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = theme.brightness == Brightness.dark;
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: isDark
-              ? [const Color(0xFF0B1218), const Color(0xFF111E2A)]
-              : [const Color(0xFFF2F6FB), const Color(0xFFF8FBFF)],
         ),
       ),
     );

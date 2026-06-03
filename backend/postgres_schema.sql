@@ -59,6 +59,8 @@ CREATE TABLE IF NOT EXISTS alerts (
 
 CREATE TABLE IF NOT EXISTS summary_reports (
     id SERIAL PRIMARY KEY,
+    user_id TEXT NULL,
+    source_id TEXT NULL,
     title TEXT NOT NULL,
     window_ms BIGINT NOT NULL,
     generated_at_ms BIGINT NOT NULL,
@@ -66,6 +68,12 @@ CREATE TABLE IF NOT EXISTS summary_reports (
     alert_counts JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE INDEX IF NOT EXISTS idx_summary_reports_user_id ON summary_reports(user_id);
+CREATE INDEX IF NOT EXISTS idx_summary_reports_source_id ON summary_reports(source_id);
+CREATE INDEX IF NOT EXISTS idx_summary_reports_generated_at_ms ON summary_reports(generated_at_ms DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_summary_reports_user_source_window
+    ON summary_reports(user_id, source_id, window_ms);
 
 CREATE TABLE IF NOT EXISTS model_versions (
     id SERIAL PRIMARY KEY,
@@ -213,3 +221,8 @@ CREATE TABLE IF NOT EXISTS chat_history (
 );
 
 CREATE INDEX IF NOT EXISTS idx_chat_history_created_at ON chat_history(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_chat_history_user_id ON chat_history(user_id);
+
+-- Migrate existing DBs (safe to re-run)
+ALTER TABLE summary_reports ADD COLUMN IF NOT EXISTS user_id TEXT NULL;
+ALTER TABLE summary_reports ADD COLUMN IF NOT EXISTS source_id TEXT NULL;

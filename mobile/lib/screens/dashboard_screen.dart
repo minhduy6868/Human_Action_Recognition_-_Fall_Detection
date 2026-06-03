@@ -1,22 +1,30 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:get_it/get_it.dart';
 import 'package:intl/intl.dart';
 
 import '../core/backend_runtime_config.dart';
+import '../models/realtime_status.dart';
 import '../models/source.dart';
 import '../services/monitoring_api.dart';
-import '../services/sources_api.dart';
 import '../core/l10n/app_localizations.dart';
 import '../core/storage/app_storage.dart';
-import '../state/fall_detection/realtime_cubit.dart';
-import '../state/fall_detection/realtime_state.dart';
+import '../state/selected_source/selected_source_cubit.dart';
+import '../state/selected_source/selected_source_state.dart';
 import '../widgets/safe_mjpeg_view.dart';
 
 class DashboardScreen extends StatefulWidget {
-  const DashboardScreen({super.key, this.isActive = true});
+  const DashboardScreen({
+    super.key,
+    this.isActive = true,
+    this.onOpenAnalytics,
+  });
 
   final bool isActive;
+  final VoidCallback? onOpenAnalytics;
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
@@ -24,25 +32,15 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   final _monitoringApi = GetIt.instance<MonitoringApi>();
-  final _sourcesApi = GetIt.instance<SourcesApi>();
   final _storage = GetIt.instance<CustomSharedPreferences>();
   final _backendConfig = GetIt.instance<BackendRuntimeConfig>();
 
   List<dynamic> _events = [];
   List<dynamic> _reports = [];
-  List<dynamic> _logs = [];
-  List<Source> _sources = [];
   String? _error;
-  int _selectedSourceIndex = -1;
-
-  Source? get _activeSource {
-    for (final source in _sources) {
-      if (source.isActive) {
-        return source;
-      }
-    }
-    return null;
-  }
+  bool _loadingMetrics = false;
+  RealtimeStatus _streamStatus = RealtimeStatus.initial();
+  Timer? _statusTimer;
 
   void _showSourcePicker() {
     showModalBottomSheet(
@@ -68,34 +66,30 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ],
                 ),
                 const SizedBox(height: 8),
-                if (_sources.isEmpty)
+                if (context.read<SelectedSourceCubit>().state.sources.isEmpty)
                   Padding(
                     padding: const EdgeInsets.all(12.0),
                     child: Text(AppLocalizations.of(context)
                         .translate('no_camera_sources_yet')),
                   )
                 else
-                  ..._sources.map((s) {
-                    final idx = _sources.indexOf(s);
+                  ...context.read<SelectedSourceCubit>().state.sources.map((s) {
+                    final idx = context
+                        .read<SelectedSourceCubit>()
+                        .state
+                        .sources
+                        .indexOf(s);
                     return ListTile(
                       title: Text(s.name.isEmpty
                           ? '${AppLocalizations.of(context).translate('camera')} ${idx + 1}'
                           : s.name),
                       subtitle: Text(s.sourceUrl),
-                      trailing: _selectedSourceIndex == idx
-                          ? Icon(Icons.check_circle,
-                              color: Theme.of(context).colorScheme.primary)
-                          : TextButton(
-                              onPressed: () {
-                                Navigator.of(ctx).pop();
-                                _activateSource(idx);
-                              },
-                              child: Text(AppLocalizations.of(context)
-                                  .translate('activate')),
-                            ),
+                      trailing: s.isActive
+                          ? Icon(Icons.circle, size: 10, color: Colors.green.shade600)
+                          : null,
                       onTap: () {
                         Navigator.of(ctx).pop();
-                        _activateSource(idx);
+                        _selectSourceById(s.id);
                       },
                     );
                   }).toList(),
@@ -110,13 +104,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void initState() {
     super.initState();
-    _loadData();
-    if (widget.isActive) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        context.read<RealtimeCubit>().connect();
-      });
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(_loadData());
+      _restartStatusPoll();
+    });
   }
 
   @override
@@ -124,55 +116,86 @@ class _DashboardScreenState extends State<DashboardScreen> {
     super.didUpdateWidget(oldWidget);
     if (widget.isActive == oldWidget.isActive) return;
     if (widget.isActive) {
-      context.read<RealtimeCubit>().connect();
+      _restartStatusPoll();
     } else {
-      context.read<RealtimeCubit>().disconnect();
+      _statusTimer?.cancel();
     }
   }
 
   @override
   void dispose() {
-    context.read<RealtimeCubit>().disconnect();
+    _statusTimer?.cancel();
     super.dispose();
+  }
+
+  void _restartStatusPoll() {
+    _statusTimer?.cancel();
+    if (!widget.isActive) return;
+    _statusTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+      unawaited(_pollStreamStatus());
+    });
+    unawaited(_pollStreamStatus());
+  }
+
+  Future<void> _pollStreamStatus() async {
+    final selected = context.read<SelectedSourceCubit>().state.selectedSource;
+    if (selected == null || !selected.isActive) {
+      if (!mounted) return;
+      setState(() => _streamStatus = RealtimeStatus.initial());
+      return;
+    }
+    try {
+      final map = await _monitoringApi.getStreamStatus(selected.id);
+      if (!mounted) return;
+      setState(() => _streamStatus = RealtimeStatus.fromMap(map));
+    } catch (_) {}
   }
 
   Future<void> _loadData() async {
     if (mounted) {
-      setState(() => _error = null);
+      setState(() {
+        _error = null;
+        _loadingMetrics = true;
+      });
     }
     try {
+      await context.read<SelectedSourceCubit>().refreshSources();
+      final sourceId = context.read<SelectedSourceCubit>().state.selectedSourceId;
       final results = await Future.wait([
-        _sourcesApi.listSources(),
-        _monitoringApi.getHistory(limit: 60),
-        _monitoringApi.getReports(limit: 20),
-        _monitoringApi.getLogs(limit: 20),
+        _monitoringApi.getHistory(limit: 60, sourceId: sourceId),
+        _monitoringApi.getReports(limit: 20, sourceId: sourceId),
       ]);
+      if (!mounted) return;
       setState(() {
-        _sources = results[0] as List<Source>;
-        _events = results[1];
-        _reports = results[2];
-        _logs = results[3];
-        final activeIndex = _sources.indexWhere((source) => source.isActive);
-        if (activeIndex >= 0) {
-          _selectedSourceIndex = activeIndex;
-        } else {
-          _selectedSourceIndex = -1;
-        }
+        _events = results[0];
+        _reports = results[1];
       });
+      unawaited(_pollStreamStatus());
     } catch (e) {
       if (mounted) {
         setState(() => _error = e.toString());
       }
     } finally {
-      if (mounted) setState(() {});
+      if (mounted) {
+        setState(() => _loadingMetrics = false);
+      }
     }
+  }
+
+  Future<void> _selectSourceById(String sourceId) async {
+    HapticFeedback.selectionClick();
+    await context.read<SelectedSourceCubit>().selectSource(sourceId);
+    await _loadData();
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Scaffold(
+    return BlocListener<SelectedSourceCubit, SelectedSourceState>(
+      listenWhen: (prev, next) => prev.selectedSourceId != next.selectedSourceId,
+      listener: (_, __) => unawaited(_loadData()),
+      child: Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
@@ -231,6 +254,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
         ],
       ),
+      ),
     );
   }
 
@@ -265,12 +289,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Widget _buildLiveFeedCard(ThemeData theme) {
     final loc = AppLocalizations.of(context);
-    final source = _activeSource;
+    final source = context.watch<SelectedSourceCubit>().state.selectedSource;
     final name = source?.name.isNotEmpty == true
         ? source!.name
-        : 'Chọn nguồn để đồng bộ với BE';
-    final streamUrl = source == null ? '' : _backendConfig.sourceMjpegUrl(source.id);
+        : loc.translate('no_active_source_selected');
+    final streamUrl = source != null && source.isActive
+        ? _backendConfig.sourceMjpegUrl(source.id)
+        : '';
     final headers = _storage.authorizationHeaders;
+    final placeholderMessage = source == null
+        ? loc.translate('no_active_source_selected')
+        : (source.isActive
+            ? loc.translate('stream_unavailable')
+            : loc.translate('source_not_running'));
 
     return InkWell(
       borderRadius: BorderRadius.circular(24),
@@ -319,67 +350,56 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
             AspectRatio(
               aspectRatio: 16 / 9,
-              child: BlocBuilder<RealtimeCubit, RealtimeState>(
-                builder: (context, realtimeState) {
-                  if (streamUrl.isEmpty) {
-                    return _buildStreamPlaceholder(
-                        theme,
-                        AppLocalizations.of(context)
-                            .translate('no_active_source_selected'));
-                  }
-
-                  return Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      ColoredBox(
-                        color:
-                            theme.colorScheme.surfaceVariant.withOpacity(0.18),
-                        child: SafeMjpegView(
-                          enabled: widget.isActive,
-                          streamUrl: streamUrl,
-                          headers: headers,
-                          placeholder: _buildStreamPlaceholder(
-                            theme,
-                            AppLocalizations.of(context)
-                                .translate('stream_unavailable'),
+              child: streamUrl.isEmpty
+                  ? _buildStreamPlaceholder(theme, placeholderMessage)
+                  : Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        ColoredBox(
+                          color: theme.colorScheme.surfaceContainerHighest
+                              .withValues(alpha: 0.18),
+                          child: SafeMjpegView(
+                            enabled: widget.isActive,
+                            streamUrl: streamUrl,
+                            headers: headers,
+                            placeholder: _buildStreamPlaceholder(
+                              theme,
+                              loc.translate('stream_unavailable'),
+                            ),
                           ),
                         ),
-                      ),
-                      Positioned(
-                        left: 12,
-                        top: 12,
-                        child: Wrap(
-                          spacing: 8,
-                          children: [
-                            _StreamStatusBadge(
-                              label: realtimeState.isConnected
-                                  ? loc.translate('connected').toUpperCase()
-                                  : loc.translate('connecting').toUpperCase(),
-                              color: realtimeState.isConnected
-                                  ? const Color(0xFF1FBF9B)
-                                  : const Color(0xFFF1A53A),
-                            ),
-                            _StreamStatusBadge(
-                              label: loc.actionLabelUpper(
-                                  realtimeState.status.action),
-                              color: const Color(0xFF0B2E4C),
-                            ),
-                          ],
+                        Positioned(
+                          left: 12,
+                          top: 12,
+                          child: Wrap(
+                            spacing: 8,
+                            children: [
+                              _StreamStatusBadge(
+                                label: source!.isActive
+                                    ? loc.translate('connected').toUpperCase()
+                                    : loc.translate('connecting').toUpperCase(),
+                                color: source.isActive
+                                    ? const Color(0xFF1FBF9B)
+                                    : const Color(0xFFF1A53A),
+                              ),
+                              _StreamStatusBadge(
+                                label: loc.actionLabelUpper(_streamStatus.action),
+                                color: const Color(0xFF0B2E4C),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                      Positioned(
-                        right: 12,
-                        bottom: 12,
-                        child: _StreamStatusBadge(
-                          label:
-                              '${(realtimeState.status.confidence * 100).toStringAsFixed(1)}%',
-                          color: const Color(0xFF0B2E4C),
+                        Positioned(
+                          right: 12,
+                          bottom: 12,
+                          child: _StreamStatusBadge(
+                            label:
+                                '${(_streamStatus.confidence * 100).toStringAsFixed(1)}%',
+                            color: const Color(0xFF0B2E4C),
+                          ),
                         ),
-                      ),
-                    ],
-                  );
-                },
-              ),
+                      ],
+                    ),
             ),
           ],
         ),
@@ -393,22 +413,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
         builder: (_) => _FullscreenCameraView(name: name, streamUrl: streamUrl),
       ),
     );
-  }
-
-  Future<void> _activateSource(int index) async {
-    if (index < 0 || index >= _sources.length) return;
-    final source = _sources[index];
-    setState(() {
-      _selectedSourceIndex = index;
-      _error = null;
-    });
-    try {
-      await _sourcesApi.activateSource(source.id);
-      await _loadData();
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _error = e.toString());
-    }
   }
 
   Widget _buildStreamPlaceholder(ThemeData theme, String message) {
@@ -434,14 +438,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Widget _buildRealtimeSnapshot(ThemeData theme) {
     final loc = AppLocalizations.of(context);
-    return BlocBuilder<RealtimeCubit, RealtimeState>(
-      builder: (context, realtimeState) {
-        final status = realtimeState.status;
-        final timestamp = status.timestampMs > 0
-            ? DateTime.fromMillisecondsSinceEpoch(status.timestampMs)
-            : null;
+    final selected = context.watch<SelectedSourceCubit>().state.selectedSource;
+    final status = _streamStatus;
+    final timestamp = status.timestampMs > 0
+        ? DateTime.fromMillisecondsSinceEpoch(status.timestampMs)
+        : null;
 
-        return Card(
+    return Card(
           elevation: 0,
           clipBehavior: Clip.antiAlias,
           shape:
@@ -463,11 +466,27 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           style: theme.textTheme.titleMedium
                               ?.copyWith(fontWeight: FontWeight.w800)),
                     ),
+                    if (selected != null)
+                      Text(
+                        loc.translate('viewing_source', {
+                          'name': selected.name.isNotEmpty
+                              ? selected.name
+                              : selected.id,
+                        }),
+                        style: theme.textTheme.bodySmall,
+                      ),
                     ConnectionPill(
-                        isConnected: realtimeState.isConnected,
-                        error: realtimeState.error),
+                      isConnected: selected?.isActive == true &&
+                          status.timestampMs > 0,
+                      error: selected?.isActive == true ? null : loc.translate('source_not_running'),
+                    ),
                   ],
                 ),
+                if (_loadingMetrics)
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 12),
+                    child: LinearProgressIndicator(),
+                  ),
                 const SizedBox(height: 16),
                 _InfoRow(
                     label: loc.translate('action'),
@@ -525,18 +544,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
           ),
         );
-      },
-    );
   }
 
   Widget _buildSourceSelector(ThemeData theme) {
     final loc = AppLocalizations.of(context);
-    final activeSource = _activeSource;
-    final activeLabel = activeSource == null
+    final sourceState = context.watch<SelectedSourceCubit>().state;
+    final sources = sourceState.sources;
+    final selected = sourceState.selectedSource;
+    final activeLabel = selected == null
         ? loc.translate('no_active_source_selected')
-        : (activeSource.name.isNotEmpty
-            ? activeSource.name
-            : activeSource.sourceUrl);
+        : (selected.name.isNotEmpty ? selected.name : selected.sourceUrl);
 
     return Card(
       elevation: 0,
@@ -571,36 +588,43 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ],
             ),
             const SizedBox(height: 12),
-            if (_sources.isEmpty)
+            if (sources.isEmpty)
               Text(loc.translate('no_camera_sources_yet'),
                   style: theme.textTheme.bodyMedium)
             else
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: Row(
-                  children: List.generate(_sources.length, (index) {
-                    final source = _sources[index];
+                  children: List.generate(sources.length, (index) {
+                    final source = sources[index];
                     final label = source.name.isEmpty
                         ? '${loc.translate('camera')} ${index + 1}'
                         : source.name;
-                    final isSelected = index == _selectedSourceIndex;
+                    final isSelected = source.id == sourceState.selectedSourceId;
 
                     return Padding(
                       padding: const EdgeInsets.only(right: 10),
-                      child: ChoiceChip(
-                        label: Text(label),
+                      child: FilterChip(
+                        label: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (source.isActive) ...[
+                              Icon(Icons.circle,
+                                  size: 8, color: Colors.green.shade600),
+                              const SizedBox(width: 6),
+                            ],
+                            Text(label),
+                          ],
+                        ),
                         selected: isSelected,
-                        onSelected: (selected) {
-                          if (selected) {
-                            _activateSource(index);
-                          }
-                        },
+                        showCheckmark: false,
+                        onSelected: (_) => unawaited(_selectSourceById(source.id)),
                       ),
                     );
                   }),
                 ),
               ),
-            if (activeSource != null) ...[
+            if (selected != null) ...[
               const SizedBox(height: 12),
               Row(
                 children: [
@@ -609,7 +633,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      '${loc.translate('active_source')}: $activeLabel',
+                      '${loc.translate('active_source')}: $activeLabel'
+                      '${selected.isActive ? '' : ' • ${loc.translate('source_not_running')}'}',
                       style: theme.textTheme.bodySmall
                           ?.copyWith(fontWeight: FontWeight.w600),
                     ),
@@ -641,8 +666,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
             icon: Icons.analytics_rounded,
             title: AppLocalizations.of(context).translate('analytics'),
             subtitle:
-                AppLocalizations.of(context).translate('activity_history'),
-            onTap: () => Navigator.of(context).pushNamed('/analytics'),
+                AppLocalizations.of(context).translate('analytics_hero_desc'),
+            onTap: () => widget.onOpenAnalytics?.call(),
           ),
         ),
       ],
@@ -745,6 +770,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildSystemSnapshot(ThemeData theme) {
+    final loc = AppLocalizations.of(context);
     return Card(
       elevation: 0,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
@@ -753,7 +779,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('System snapshot',
+            Text(loc.translate('system_snapshot'),
                 style: theme.textTheme.titleMedium
                     ?.copyWith(fontWeight: FontWeight.w800)),
             const SizedBox(height: 14),
@@ -761,15 +787,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
               children: [
                 Expanded(
                     child: _SnapshotCard(
-                        label: 'Reports',
+                        label: loc.translate('reports'),
                         value: _reports.length.toString(),
                         icon: Icons.description_rounded)),
                 const SizedBox(width: 12),
                 Expanded(
                     child: _SnapshotCard(
-                        label: 'Logs',
-                        value: _logs.length.toString(),
-                        icon: Icons.manage_search_rounded)),
+                        label: loc.translate('history'),
+                        value: _events.length.toString(),
+                        icon: Icons.history_rounded)),
               ],
             ),
             const SizedBox(height: 12),
@@ -780,7 +806,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     onPressed: () =>
                         Navigator.of(context).pushNamed('/reports'),
                     icon: const Icon(Icons.assessment_rounded),
-                    label: const Text('Open reports'),
+                    label: Text(loc.translate('open_reports')),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -788,7 +814,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   child: OutlinedButton.icon(
                     onPressed: _loadData,
                     icon: const Icon(Icons.sync_rounded),
-                    label: const Text('Sync data'),
+                    label: Text(loc.translate('sync_data')),
                   ),
                 ),
               ],
@@ -843,9 +869,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   String _readTrackId(dynamic event) {
     if (event is Map<String, dynamic>) {
-      return (event['track_id'] ?? event['trackId'] ?? 'Track').toString();
+      final loc = AppLocalizations.of(context);
+      return (event['track_id'] ?? event['trackId'] ?? loc.translate('track'))
+          .toString();
     }
-    return 'Track';
+    return AppLocalizations.of(context).translate('track');
   }
 
   DateTime _readTimestamp(dynamic event) {
@@ -1086,6 +1114,7 @@ class ConnectionPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
@@ -1099,8 +1128,10 @@ class ConnectionPill extends StatelessWidget {
       ),
       child: Text(
         isConnected
-            ? 'Connected'
-            : (error != null ? 'Connection error' : 'Connecting...'),
+            ? loc.translate('connected')
+            : (error != null
+                ? loc.translate('connection_error')
+                : loc.translate('connecting')),
         style: TextStyle(
           color:
               isConnected ? const Color(0xFF1FBF9B) : const Color(0xFFF1A53A),

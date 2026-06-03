@@ -31,7 +31,11 @@ class DetectionLogStore:
     ) -> None:
         if not self._enabled:
             return
-        if settings.log_every_n_frames > 1 and frame_index % settings.log_every_n_frames != 0:
+        if (
+            settings.log_every_n_frames > 1
+            and frame_index % settings.log_every_n_frames != 0
+            and not status.fall
+        ):
             return
 
         try:

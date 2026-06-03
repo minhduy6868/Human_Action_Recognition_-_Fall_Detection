@@ -29,11 +29,12 @@ class _CameraMonitorScreenState extends State<CameraMonitorScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context);
     final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          'Realtime Monitor',
+          loc.translate('realtime_monitor'),
           style: theme.textTheme.titleLarge?.copyWith(
             fontWeight: FontWeight.w800,
           ),
@@ -163,6 +164,7 @@ class _CameraMonitorScreenState extends State<CameraMonitorScreen> {
   }
 
   Widget _buildStreamCard(BuildContext context, CameraMonitorState state) {
+    final loc = AppLocalizations.of(context);
     final source = state.selectedSource;
     final streamUrl = source == null ? '' : _backendConfig.sourceMjpegUrl(source.id);
     final headers = _storage.authorizationHeaders;
@@ -183,14 +185,16 @@ class _CameraMonitorScreenState extends State<CameraMonitorScreen> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    source == null ? 'Camera feed' : source.name,
+                    source == null ? loc.translate('camera_feed') : source.name,
                     style: Theme.of(context).textTheme.titleSmall?.copyWith(
                           fontWeight: FontWeight.w700,
                         ),
                   ),
                 ),
                 Text(
-                  state.isConnected ? 'Connected' : 'Waiting',
+                  state.isConnected
+                      ? loc.translate('connected')
+                      : loc.translate('waiting'),
                   style: TextStyle(
                     color: state.isConnected ? Colors.green : Colors.orange,
                     fontWeight: FontWeight.w600,
@@ -213,7 +217,9 @@ class _CameraMonitorScreenState extends State<CameraMonitorScreen> {
                   left: 12,
                   top: 12,
                   child: _StreamBadge(
-                    label: source == null ? 'Select a source' : source.name,
+                    label: source == null
+                        ? loc.translate('select_source')
+                        : source.name,
                     icon: Icons.stream,
                   ),
                 ),
@@ -221,14 +227,14 @@ class _CameraMonitorScreenState extends State<CameraMonitorScreen> {
                   Container(
                     color: Colors.black45,
                     alignment: Alignment.center,
-                    child: const Column(
+                    child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.cloud_off, color: Colors.white, size: 40),
-                        SizedBox(height: 12),
+                        const Icon(Icons.cloud_off, color: Colors.white, size: 40),
+                        const SizedBox(height: 12),
                         Text(
-                          'Disconnected from backend',
-                          style: TextStyle(color: Colors.white, fontSize: 16),
+                          loc.translate('disconnected_backend'),
+                          style: const TextStyle(color: Colors.white, fontSize: 16),
                         ),
                       ],
                     ),
@@ -242,6 +248,7 @@ class _CameraMonitorScreenState extends State<CameraMonitorScreen> {
   }
 
   Widget _buildSourceSelector(BuildContext context, CameraMonitorState state) {
+    final loc = AppLocalizations.of(context);
     return Card(
       elevation: 0,
       clipBehavior: Clip.antiAlias,
@@ -257,7 +264,7 @@ class _CameraMonitorScreenState extends State<CameraMonitorScreen> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Your source',
+                    loc.translate('your_source'),
                     style: Theme.of(context).textTheme.titleSmall?.copyWith(
                           fontWeight: FontWeight.w700,
                         ),
@@ -274,7 +281,7 @@ class _CameraMonitorScreenState extends State<CameraMonitorScreen> {
             const SizedBox(height: 12),
             if (state.sources.isEmpty)
               Text(
-                'No source configured for this account.',
+                loc.translate('no_source_for_account'),
                 style: Theme.of(context).textTheme.bodyMedium,
               )
             else
@@ -286,7 +293,11 @@ class _CameraMonitorScreenState extends State<CameraMonitorScreen> {
                   final selected = index == state.selectedIndex;
                   return ChoiceChip(
                     selected: selected,
-                    label: Text(source.name.isEmpty ? 'Source ${index + 1}' : source.name),
+                    label: Text(
+                      source.name.isEmpty
+                          ? loc.translate('source_index', {'index': index + 1})
+                          : source.name,
+                    ),
                     onSelected: (_) => context.read<CameraMonitorCubit>().selectSource(index),
                   );
                 }),
@@ -383,11 +394,11 @@ class _CameraMonitorScreenState extends State<CameraMonitorScreen> {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const SizedBox(
+                SizedBox(
                   width: 120,
                   child: Text(
-                    'Confidence',
-                    style: TextStyle(
+                    AppLocalizations.of(context).translate('confidence'),
+                    style: const TextStyle(
                       color: Colors.white70,
                       fontWeight: FontWeight.w600,
                     ),
@@ -427,7 +438,7 @@ class _CameraMonitorScreenState extends State<CameraMonitorScreen> {
             ),
             const SizedBox(height: 12),
             _InfoRow(
-              label: 'Track ID',
+              label: loc.translate('track_id'),
               value: status.trackId,
             ),
             const SizedBox(height: 12),
@@ -457,7 +468,7 @@ class _CameraMonitorScreenState extends State<CameraMonitorScreen> {
                 const Icon(Icons.receipt_long, size: 18),
                 const SizedBox(width: 8),
                 Text(
-                  '${loc.translate('status')} Logs',
+                  loc.translate('status_logs'),
                   style: Theme.of(context).textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w700,
                       ),

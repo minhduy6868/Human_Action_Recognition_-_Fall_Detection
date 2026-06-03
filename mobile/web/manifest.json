@@ -1,11 +1,11 @@
 {
-    "name": "video_ai_detect",
-    "short_name": "video_ai_detect",
+    "name": "Ai camcheck",
+    "short_name": "Ai camcheck",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "AI camera monitoring with fall detection and per-source analytics.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

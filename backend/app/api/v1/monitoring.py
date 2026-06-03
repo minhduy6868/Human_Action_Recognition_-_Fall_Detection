@@ -15,11 +15,11 @@ from app.core.config import get_settings
 from app.db.database import get_db
 from app.db.models import ChatHistory, DetectionLog, SourceConnection
 from app.models.schemas import (
-    ActionSegment,
     ActionSummaryRequest,
     ActivityInsightResponse,
     ActionTimelineResponse,
     ChatQueryRequest,
+    ChatQueryResponse,
     ChatHistoryResponse,
     DetectionLogResponse,
     DetectionLogDetailResponse,
@@ -30,12 +30,27 @@ from app.models.schemas import (
     StreamSessionResponse,
     SummaryQueryRequest,
     SummaryQueryResponse,
+    SummaryReportResponse,
 )
 from app.services.chat_service import ChatService
 from app.services.chat_history_store import ChatHistoryStore
+from app.services.summary_report_store import list_user_reports, upsert_user_reports
 from app.services.inference_service import InferenceService
 from app.services.stream_manager import stream_manager
-from app.services.stream_service import alert_engine, state, stream_service
+from app.core.user_scope import isolated_realtime_state
+from app.services.alert_engine import AlertEngine
+from app.services.user_data_store import (
+    list_user_alerts,
+    list_user_fall_alerts_in_window,
+    list_user_fall_events_from_logs,
+)
+from app.utils.detection_insight import (
+    log_row_to_status,
+    merge_status_items,
+    log_narrative_lines_from_items,
+    notable_moments_from_items,
+    segments_from_items,
+)
 from app.utils.action_analytics import durations_by_action
 from app.utils.video import list_webcams
 
@@ -101,29 +116,144 @@ def _resolve_realtime_state(
     session_state = stream_manager.get_state_for_user(user_id, active_source_id)
     if session_state is not None:
         return session_state
-    return state
+    return isolated_realtime_state()
 
 
-def _segments_from_items(items: list[RealtimeStatus]) -> list[ActionSegment]:
-    if not items:
-        return []
+def _fetch_detection_items(
+    db: Session,
+    user_id: str,
+    *,
+    source_id: str | None = None,
+    from_ms: int | None = None,
+    to_ms: int | None = None,
+    limit: int = 20000,
+) -> list[RealtimeStatus]:
+    query = select(DetectionLog).where(DetectionLog.user_id == user_id)
+    if source_id:
+        query = query.where(DetectionLog.source_id == source_id)
+    if from_ms is not None:
+        query = query.where(DetectionLog.timestamp_ms >= from_ms)
+    if to_ms is not None:
+        query = query.where(DetectionLog.timestamp_ms <= to_ms)
 
-    segments: list[ActionSegment] = []
-    current_action = items[0].action
-    start_ms = items[0].timestamp_ms
-    last_ms = start_ms
+    rows = db.execute(
+        query.order_by(DetectionLog.timestamp_ms.asc()).limit(min(limit, 20000))
+    ).scalars().all()
+    return [log_row_to_status(row) for row in rows]
 
-    for item in items[1:]:
-        if item.action != current_action:
-            segments.append(
-                ActionSegment(action=current_action, start_ms=start_ms, end_ms=last_ms)
+
+def _fetch_chat_detection_items(
+    db: Session,
+    user_id: str,
+    *,
+    source_id: str | None,
+    from_ms: int,
+    to_ms: int,
+) -> list[RealtimeStatus]:
+    source_ids = _resolve_source_ids(db, user_id, [source_id] if source_id else [])
+    items: list[RealtimeStatus] = []
+    for sid in source_ids:
+        items.extend(
+            _fetch_detection_items(
+                db,
+                user_id,
+                source_id=sid,
+                from_ms=from_ms,
+                to_ms=to_ms,
             )
-            current_action = item.action
-            start_ms = item.timestamp_ms
-        last_ms = item.timestamp_ms
+        )
+    if not items:
+        items = _fetch_detection_items(
+            db,
+            user_id,
+            source_id=None,
+            from_ms=from_ms,
+            to_ms=to_ms,
+        )
+    return items
 
-    segments.append(ActionSegment(action=current_action, start_ms=start_ms, end_ms=last_ms))
-    return segments
+
+def _enrich_insight_with_fall_signals(
+    db: Session,
+    user_id: str,
+    insight: ActivityInsightResponse,
+    *,
+    from_ms: int,
+    to_ms: int,
+    source_id: str | None = None,
+) -> ActivityInsightResponse:
+    fall_events = list(insight.fall_events or [])
+    seen_ts: set[int] = {event.timestamp_ms for event in fall_events}
+
+    for alert in list_user_fall_alerts_in_window(
+        db,
+        user_id,
+        from_ms=from_ms,
+        to_ms=to_ms,
+        source_id=source_id,
+    ):
+        if alert.timestamp_ms in seen_ts:
+            continue
+        seen_ts.add(alert.timestamp_ms)
+        fall_events.append(
+            FallEvent(
+                detected=True,
+                confidence=alert.confidence,
+                timestamp_ms=alert.timestamp_ms,
+                action=alert.action,
+                event_id=len(fall_events) + 1,
+            )
+        )
+
+    for event in list_user_fall_events_from_logs(
+        db,
+        user_id,
+        limit=200,
+        from_ms=from_ms,
+        to_ms=to_ms,
+        source_id=source_id,
+    ):
+        if event.timestamp_ms in seen_ts:
+            continue
+        seen_ts.add(event.timestamp_ms)
+        fall_events.append(
+            FallEvent(
+                detected=True,
+                confidence=event.confidence,
+                timestamp_ms=event.timestamp_ms,
+                action=event.action,
+                event_id=len(fall_events) + 1,
+            )
+        )
+
+    if not fall_events:
+        return insight
+
+    fall_events.sort(key=lambda item: item.timestamp_ms)
+    for idx, event in enumerate(fall_events, start=1):
+        fall_events[idx - 1] = event.model_copy(update={"event_id": idx})
+
+    return insight.model_copy(
+        update={
+            "fall_detected": True,
+            "fall_events": fall_events,
+        }
+    )
+
+
+def _resolve_active_source_id(
+    db: Session,
+    user_id: str,
+    source_id: str | None = None,
+) -> str | None:
+    if source_id:
+        return source_id
+    active = db.execute(
+        select(SourceConnection)
+        .where(SourceConnection.user_id == user_id, SourceConnection.is_active.is_(True))
+        .order_by(SourceConnection.updated_at.desc())
+    ).scalars().first()
+    return active.id if active else None
 
 
 def _build_insight(items: list[RealtimeStatus], from_ms: int, to_ms: int) -> ActivityInsightResponse:
@@ -143,6 +273,7 @@ def _build_insight(items: list[RealtimeStatus], from_ms: int, to_ms: int) -> Act
             avg_objects_count=0.0,
             multi_person_frames=0,
             top_object_labels={},
+            log_narrative_lines=[],
         )
 
     durations = durations_by_action(items)
@@ -161,7 +292,7 @@ def _build_insight(items: list[RealtimeStatus], from_ms: int, to_ms: int) -> Act
         dominant_action = max(durations, key=durations.get)
         dominant_ratio = durations[dominant_action] / total_duration
 
-    segments = _segments_from_items(items)
+    segments = segments_from_items(items)
     fall_events: list[FallEvent] = []
     for idx, item in enumerate([i for i in items if i.fall]):
         fall_events.append(
@@ -189,7 +320,58 @@ def _build_insight(items: list[RealtimeStatus], from_ms: int, to_ms: int) -> Act
         avg_objects_count=round(sum(object_counts) / len(object_counts), 2) if object_counts else 0.0,
         multi_person_frames=sum(1 for count in people_counts if count > 1),
         top_object_labels=dict(sorted(top_object_labels.items(), key=lambda item: item[1], reverse=True)[:8]),
+        notable_moments=notable_moments_from_items(items),
+        log_narrative_lines=log_narrative_lines_from_items(items),
     )
+
+
+def _reports_from_logs(
+    db: Session,
+    user_id: str,
+    *,
+    source_id: str | None = None,
+    limit: int = 20,
+) -> list[SummaryReportResponse]:
+    now_ms = int(time.time() * 1000)
+    source_ids = _resolve_source_ids(db, user_id, [source_id] if source_id else [])
+    if not source_ids:
+        return []
+
+    windows = (
+        (60 * 60 * 1000, "1 giờ"),
+        (6 * 60 * 60 * 1000, "6 giờ"),
+        (24 * 60 * 60 * 1000, "24 giờ"),
+    )
+    reports: list[SummaryReportResponse] = []
+    for sid in source_ids:
+        for window_ms, label in windows:
+            from_ms = now_ms - window_ms
+            items = _fetch_detection_items(
+                db,
+                user_id,
+                source_id=sid,
+                from_ms=from_ms,
+                to_ms=now_ms,
+            )
+            if not items:
+                continue
+            insight = _build_insight(items, from_ms, now_ms)
+            if insight.total_samples <= 0:
+                continue
+            fall_count = sum(1 for item in items if item.fall)
+            reports.append(
+                SummaryReportResponse(
+                    source_id=sid,
+                    title=f"Báo cáo {label} — {sid[:8]}",
+                    window_ms=window_ms,
+                    generated_at_ms=now_ms,
+                    insight=insight,
+                    alert_counts={"fall": fall_count} if fall_count else {},
+                )
+            )
+
+    reports.sort(key=lambda report: report.generated_at_ms, reverse=True)
+    return reports[:limit]
 
 
 def _enforce_single_active_source(db: Session, user_id: str, keep_source_id: str) -> None:
@@ -206,9 +388,28 @@ def _enforce_single_active_source(db: Session, user_id: str, keep_source_id: str
 
 
 def _stop_other_sessions(user_id: str, keep_source_id: str) -> None:
-    for session in stream_manager.list():
-        if session.user_id == user_id and session.source_id != keep_source_id:
+    for session in stream_manager.list(user_id=user_id):
+        if session.source_id != keep_source_id:
             stream_manager.stop(session.source_id)
+
+
+def _start_user_streams(db: Session, user_id: str) -> None:
+    sources = db.execute(
+        select(SourceConnection).where(
+            SourceConnection.user_id == user_id,
+            SourceConnection.is_active.is_(True),
+        )
+    ).scalars().all()
+    for src in sources:
+        try:
+            stream_manager.start(
+                source_id=src.id,
+                user_id=user_id,
+                source_type=src.source_type,
+                source_url=src.source_url,
+            )
+        except PermissionError:
+            continue
 
 
 @router.get("/health", response_model=dict)
@@ -279,13 +480,36 @@ def get_objects(
 @router.get("/history", response_model=dict)
 def history(
     request: Request,
-    limit: int = 100,
+    limit: int = 200,
+    source_id: str | None = None,
+    from_ms: int | None = None,
+    to_ms: int | None = None,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ) -> dict:
-    rt_state = _resolve_realtime_state(db, current_user.id)
-    items = rt_state.get_history(limit)
-    return api_response({"items": [item.model_dump() for item in items]}, request)
+    now_ms = int(time.time() * 1000)
+    resolved_to = to_ms or now_ms
+    resolved_from = from_ms or (now_ms - 24 * 60 * 60 * 1000)
+    active_source = _resolve_active_source_id(db, current_user.id, source_id)
+
+    stored = _fetch_detection_items(
+        db,
+        current_user.id,
+        source_id=active_source,
+        from_ms=resolved_from,
+        to_ms=resolved_to,
+        limit=min(limit * 4, 5000),
+    )
+    rt_state = _resolve_realtime_state(db, current_user.id, active_source)
+    live = [
+        item
+        for item in rt_state.get_history(min(limit * 2, 500))
+        if resolved_from <= item.timestamp_ms <= resolved_to
+    ]
+    merged = merge_status_items(stored, live)
+    payload = [item.model_dump() for item in merged[-min(limit, 500) :]]
+    payload.reverse()
+    return api_response({"items": payload}, request)
 
 
 @router.get("/alerts", response_model=dict)
@@ -295,8 +519,10 @@ def alerts(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ) -> dict:
-    rt_state = _resolve_realtime_state(db, current_user.id)
-    items = rt_state.get_alerts(limit)
+    items = list_user_alerts(db, current_user.id, limit=limit)
+    if not items:
+        rt_state = _resolve_realtime_state(db, current_user.id)
+        items = rt_state.get_alerts(limit)
     return api_response([item.model_dump() for item in items], request)
 
 
@@ -319,8 +545,10 @@ def fall_events(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ) -> dict:
-    rt_state = _resolve_realtime_state(db, current_user.id)
-    items = rt_state.get_fall_events(limit)
+    items = list_user_fall_events_from_logs(db, current_user.id, limit=limit)
+    if not items:
+        rt_state = _resolve_realtime_state(db, current_user.id)
+        items = rt_state.get_fall_events(limit)
     return api_response([item.model_dump() for item in items], request)
 
 
@@ -340,11 +568,42 @@ def fall_events_after(
 def reports(
     request: Request,
     limit: int = 20,
+    source_id: str | None = None,
+    sync: bool = True,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ) -> dict:
-    rt_state = _resolve_realtime_state(db, current_user.id)
-    items = rt_state.get_reports(limit)
+    if sync:
+        generated = _reports_from_logs(
+            db,
+            current_user.id,
+            source_id=source_id,
+            limit=limit,
+        )
+        if generated:
+            upsert_user_reports(db, current_user.id, generated)
+
+    items = list_user_reports(
+        db,
+        current_user.id,
+        source_id=source_id,
+        limit=limit,
+    )
+    if not items and sync:
+        generated = _reports_from_logs(
+            db,
+            current_user.id,
+            source_id=source_id,
+            limit=limit,
+        )
+        if generated:
+            upsert_user_reports(db, current_user.id, generated)
+            items = list_user_reports(
+                db,
+                current_user.id,
+                source_id=source_id,
+                limit=limit,
+            )
     return api_response([item.model_dump() for item in items], request)
 
 
@@ -394,14 +653,44 @@ def chat_query(
     current_user=Depends(get_current_user),
 ) -> dict:
     _enforce_ai_quota(db, current_user)
-    rt_state = _resolve_realtime_state(db, current_user.id)
-    result = chat_service.answer(payload.question, payload.window_ms, insight_state=rt_state)
+    now_ms = int(time.time() * 1000)
+    resolved_window_ms = chat_service.resolve_window_ms(payload.question, payload.window_ms)
+    from_ms = now_ms - resolved_window_ms
+    active_source = _resolve_active_source_id(db, current_user.id, payload.source_id)
+    rt_state = _resolve_realtime_state(db, current_user.id, active_source)
+
+    stored = _fetch_chat_detection_items(
+        db,
+        current_user.id,
+        source_id=active_source,
+        from_ms=from_ms,
+        to_ms=now_ms,
+    )
+    live = [
+        item
+        for item in rt_state.get_history(500)
+        if item.timestamp_ms >= from_ms
+    ]
+    merged = merge_status_items(stored, live)
+    insight = _build_insight(merged, from_ms, now_ms)
+    insight = _enrich_insight_with_fall_signals(
+        db,
+        current_user.id,
+        insight,
+        from_ms=from_ms,
+        to_ms=now_ms,
+        source_id=active_source,
+    )
+    answer, intent = chat_service.answer_from_insight(payload.question, insight)
+    result = ChatQueryResponse(answer=answer, intent=intent, insight=insight)
+
     chat_history_store.record(
         payload.question,
         result.answer,
         result.intent,
         result.insight.window_ms,
         current_user.id,
+        source_id=active_source,
     )
     return api_response(result.model_dump(), request)
 
@@ -410,9 +699,20 @@ def chat_query(
 def report_summary(
     payload: ReportRequest,
     request: Request,
+    db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ) -> dict:
-    report = alert_engine.generate_summary_report(payload.window_ms, persist=payload.persist)
+    active_source = _resolve_active_source_id(db, current_user.id, None)
+    rt_state = _resolve_realtime_state(db, current_user.id, active_source)
+    engine = AlertEngine(rt_state)
+    report = engine.generate_summary_report(
+        payload.window_ms,
+        persist=False,
+        user_id=current_user.id,
+        source_id=active_source,
+    )
+    if payload.persist:
+        upsert_user_reports(db, current_user.id, [report])
     return api_response(report.model_dump(), request)
 
 
@@ -441,30 +741,29 @@ def summary_query(
         )
         return api_response(response.model_dump(), request)
 
-    query = select(DetectionLog).where(
-        DetectionLog.timestamp_ms >= from_ms,
-        DetectionLog.timestamp_ms <= to_ms,
-        DetectionLog.source_id.in_(source_ids),
-    )
-    max_rows = 20000
-    rows = db.execute(query.order_by(DetectionLog.timestamp_ms.asc()).limit(max_rows)).scalars().all()
-
     items: list[RealtimeStatus] = []
-    for row in rows:
-        items.append(
-            RealtimeStatus(
-                action=row.action,
-                confidence=row.confidence,
-                fall=row.fall,
-                fall_confidence=row.fall_confidence,
-                timestamp_ms=row.timestamp_ms,
-                track_id=row.track_id,
-                objects=[],
-                people=[],
+    for sid in source_ids:
+        items.extend(
+            _fetch_detection_items(
+                db,
+                current_user.id,
+                source_id=sid,
+                from_ms=from_ms,
+                to_ms=to_ms,
             )
         )
+    items.sort(key=lambda item: item.timestamp_ms)
 
     insight = _build_insight(items, from_ms, to_ms)
+    scoped_source = source_ids[0] if len(source_ids) == 1 else None
+    insight = _enrich_insight_with_fall_signals(
+        db,
+        current_user.id,
+        insight,
+        from_ms=from_ms,
+        to_ms=to_ms,
+        source_id=scoped_source,
+    )
     answer = None
     intent = None
     if payload.question:
@@ -476,6 +775,7 @@ def summary_query(
             intent,
             insight.window_ms,
             current_user.id,
+            source_id=source_ids[0] if source_ids else None,
         )
 
     response = SummaryQueryResponse(
@@ -537,10 +837,16 @@ def log_detail(
     current_user=Depends(get_current_user),
 ) -> dict:
     item = db.execute(
-        select(DetectionLog).where(DetectionLog.id == log_id)
+        select(DetectionLog).where(
+            DetectionLog.id == log_id,
+            DetectionLog.user_id == current_user.id,
+        )
     ).scalar_one_or_none()
     if item is None:
-        return api_response({}, request)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "NOT_FOUND", "message": "Log not found"},
+        )
 
     payload = DetectionLogDetailResponse(
         id=item.id,
@@ -588,22 +894,18 @@ def chat_history(
 
 
 @router.get("/stream/mjpeg")
-def mjpeg_stream() -> StreamingResponse:
-    boundary = "frame"
-
-    def generate():
-        while True:
-            frame = stream_service.get_latest_frame()
-            if frame:
-                yield (
-                    f"--{boundary}\r\n"
-                    "Content-Type: image/jpeg\r\n\r\n"
-                ).encode("utf-8") + frame + b"\r\n"
-            time.sleep(max(1.0 / max(settings.mjpeg_fps, 1), 0.05))
-
-    return StreamingResponse(
-        generate(),
-        media_type=f"multipart/x-mixed-replace; boundary={boundary}",
+def mjpeg_stream_legacy(
+    request: Request,
+    current_user=Depends(get_current_user),
+) -> dict:
+    """Deprecated global stream — use /streams/{source_id}/mjpeg per user source."""
+    _ = current_user
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail={
+            "code": "DEPRECATED_ENDPOINT",
+            "message": "Use GET /api/v1/streams/{source_id}/mjpeg for your own camera source.",
+        },
     )
 
 
@@ -635,12 +937,18 @@ def start_stream(
     db.add(source)
     db.commit()
 
-    session = stream_manager.start(
-        source_id=source.id,
-        user_id=current_user.id,
-        source_type=source.source_type,
-        source_url=source.source_url,
-    )
+    try:
+        session = stream_manager.start(
+            source_id=source.id,
+            user_id=current_user.id,
+            source_type=source.source_type,
+            source_url=source.source_url,
+        )
+    except PermissionError:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": "FORBIDDEN", "message": "Source is owned by another account"},
+        )
     response = StreamSessionResponse(
         source_id=session.source_id,
         user_id=session.user_id,
@@ -699,8 +1007,7 @@ def list_streams(
             source_url=session.source_url,
             active=True,
         ).model_dump()
-        for session in stream_manager.list()
-        if session.user_id == current_user.id
+        for session in stream_manager.list(user_id=current_user.id)
     ]
     return api_response(sessions, request)
 
@@ -711,8 +1018,8 @@ def stream_status(
     request: Request,
     current_user=Depends(get_current_user),
 ) -> dict:
-    session = stream_manager.get(source_id)
-    if session is None or session.user_id != current_user.id:
+    session = stream_manager.get(source_id, user_id=current_user.id)
+    if session is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "NOT_FOUND", "message": "Stream not found"},
@@ -722,8 +1029,8 @@ def stream_status(
 
 @router.get("/streams/{source_id}/mjpeg")
 def mjpeg_stream_by_source(source_id: str, request: Request, current_user=Depends(get_current_user)) -> StreamingResponse:
-    session = stream_manager.get(source_id)
-    if session is None or session.user_id != current_user.id:
+    session = stream_manager.get(source_id, user_id=current_user.id)
+    if session is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "NOT_FOUND", "message": "Stream not found"},
@@ -752,11 +1059,7 @@ async def stream_ws(websocket: WebSocket, current_user=Depends(get_current_user_
     await websocket.accept()
     # Start all active sources for this user (presence-driven)
     try:
-        sources = db.execute(
-            select(SourceConnection).where(SourceConnection.user_id == current_user.id, SourceConnection.is_active == True)
-        ).scalars().all()
-        for src in sources:
-            stream_manager.start(source_id=src.id, user_id=current_user.id, source_type=src.source_type, source_url=src.source_url)
+        _start_user_streams(db, current_user.id)
 
         while True:
             rt_state = _resolve_realtime_state(db, current_user.id)
@@ -764,10 +1067,8 @@ async def stream_ws(websocket: WebSocket, current_user=Depends(get_current_user_
             await websocket.send_json(latest.model_dump())
             await asyncio.sleep(settings.ws_interval_ms / 1000)
     except WebSocketDisconnect:
-        # Stop all sessions belonging to this user when websocket disconnects
-        for session in stream_manager.list():
-            if session.user_id == current_user.id:
-                stream_manager.stop(session.source_id)
+        for session in stream_manager.list(user_id=current_user.id):
+            stream_manager.stop(session.source_id)
         return
 
 
@@ -776,11 +1077,7 @@ async def fall_alert_ws(websocket: WebSocket, current_user=Depends(get_current_u
     await websocket.accept()
     # Ensure user's active sources are running while connected
     try:
-        sources = db.execute(
-            select(SourceConnection).where(SourceConnection.user_id == current_user.id, SourceConnection.is_active == True)
-        ).scalars().all()
-        for src in sources:
-            stream_manager.start(source_id=src.id, user_id=current_user.id, source_type=src.source_type, source_url=src.source_url)
+        _start_user_streams(db, current_user.id)
 
         last_event_id = 0
         while True:
@@ -796,9 +1093,8 @@ async def fall_alert_ws(websocket: WebSocket, current_user=Depends(get_current_u
                 last_event_id = event.event_id
             await asyncio.sleep(0.1)
     except WebSocketDisconnect:
-        for session in stream_manager.list():
-            if session.user_id == current_user.id:
-                stream_manager.stop(session.source_id)
+        for session in stream_manager.list(user_id=current_user.id):
+            stream_manager.stop(session.source_id)
         return
 
 
@@ -806,11 +1102,7 @@ async def fall_alert_ws(websocket: WebSocket, current_user=Depends(get_current_u
 async def alert_ws(websocket: WebSocket, current_user=Depends(get_current_user_ws), db: Session = Depends(get_db)) -> None:
     await websocket.accept()
     try:
-        sources = db.execute(
-            select(SourceConnection).where(SourceConnection.user_id == current_user.id, SourceConnection.is_active == True)
-        ).scalars().all()
-        for src in sources:
-            stream_manager.start(source_id=src.id, user_id=current_user.id, source_type=src.source_type, source_url=src.source_url)
+        _start_user_streams(db, current_user.id)
 
         last_alert_id = 0
         while True:
@@ -826,7 +1118,6 @@ async def alert_ws(websocket: WebSocket, current_user=Depends(get_current_user_w
                 last_alert_id = alert.alert_id
             await asyncio.sleep(0.1)
     except WebSocketDisconnect:
-        for session in stream_manager.list():
-            if session.user_id == current_user.id:
-                stream_manager.stop(session.source_id)
+        for session in stream_manager.list(user_id=current_user.id):
+            stream_manager.stop(session.source_id)
         return

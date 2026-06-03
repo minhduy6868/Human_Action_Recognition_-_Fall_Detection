@@ -83,6 +83,7 @@ class Settings(BaseSettings):
     chat_history_retention_days: int = 30
     chat_history_cleanup_interval_ms: int = 6 * 60 * 60 * 1000
     daily_ai_queries_free: int = 20
+    vip_max_active_sources: int = 5
     openrouter_api_key: str = ""
     openrouter_model: str = "baidu/cobuddy:free"
     openrouter_site_url: str = ""

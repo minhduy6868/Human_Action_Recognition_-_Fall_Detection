@@ -1,3 +1,4 @@
+from datetime import datetime
 from threading import Lock
 
 from app.models.schemas import (
@@ -172,6 +173,41 @@ class RealtimeState:
             dominant_action = max(durations, key=durations.get)
             dominant_ratio = durations[dominant_action] / total_duration
 
+        from app.models.schemas import NotableMoment
+
+        notable_moments: list[NotableMoment] = []
+        for item in items[-40:]:
+            people = item.people or []
+            if people:
+                for person in people:
+                    action = (person.action or "unknown").strip().lower()
+                    if action in {"unknown", "idle", "none", ""}:
+                        continue
+                    upper = (person.clothing.upper or "unknown").strip().lower()
+                    dt = datetime.fromtimestamp(item.timestamp_ms / 1000.0)
+                    notable_moments.append(
+                        NotableMoment(
+                            timestamp_ms=item.timestamp_ms,
+                            time_label=dt.strftime("%H:%M"),
+                            action=action,
+                            upper_color=upper,
+                            track_id=person.track_id or item.track_id,
+                        )
+                    )
+            else:
+                action = (item.action or "unknown").strip().lower()
+                if action not in {"unknown", "idle", "none", ""}:
+                    dt = datetime.fromtimestamp(item.timestamp_ms / 1000.0)
+                    notable_moments.append(
+                        NotableMoment(
+                            timestamp_ms=item.timestamp_ms,
+                            time_label=dt.strftime("%H:%M"),
+                            action=action,
+                            upper_color="unknown",
+                            track_id=item.track_id,
+                        )
+                    )
+
         return {
             "window_ms": window_ms,
             "total_samples": len(items),
@@ -187,4 +223,5 @@ class RealtimeState:
             "avg_objects_count": round(sum(object_counts) / len(object_counts), 2) if object_counts else 0.0,
             "multi_person_frames": sum(1 for count in people_counts if count > 1),
             "top_object_labels": dict(sorted(top_object_labels.items(), key=lambda item: item[1], reverse=True)[:8]),
+            "notable_moments": notable_moments[-12:],
         }

@@ -17,7 +17,15 @@ class ChatHistoryStore:
         self._enabled = settings.chat_history_enabled
         self._last_cleanup_ms = 0
 
-    def record(self, question: str, answer: str, intent: str, window_ms: int, user_id: str | None) -> None:
+    def record(
+        self,
+        question: str,
+        answer: str,
+        intent: str,
+        window_ms: int,
+        user_id: str | None,
+        source_id: str | None = None,
+    ) -> None:
         if not self._enabled:
             return
         try:
@@ -25,7 +33,7 @@ class ChatHistoryStore:
                 db.add(
                     ChatHistory(
                         user_id=user_id,
-                        source_id=settings.log_source_id,
+                        source_id=source_id or settings.log_source_id,
                         question=question,
                         answer=answer,
                         intent=intent,

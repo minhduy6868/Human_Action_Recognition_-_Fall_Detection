@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:get_it/get_it.dart';
 import 'package:intl/intl.dart';
 
-import '../services/monitoring_api.dart';
 import '../core/l10n/app_localizations.dart';
+import '../models/source.dart';
+import '../services/monitoring_api.dart';
+import '../services/sources_api.dart';
+import '../state/selected_source/selected_source_cubit.dart';
 
 class ReportsScreen extends StatefulWidget {
   const ReportsScreen({super.key});
@@ -14,8 +18,11 @@ class ReportsScreen extends StatefulWidget {
 
 class _ReportsScreenState extends State<ReportsScreen> {
   final _api = GetIt.instance<MonitoringApi>();
+  final _sourcesApi = GetIt.instance<SourcesApi>();
   bool _loading = true;
   List<dynamic> _items = [];
+  List<Source> _sources = [];
+  String? _sourceId;
 
   int get _totalWindowMs {
     return _items.fold<int>(0, (sum, item) {
@@ -29,14 +36,22 @@ class _ReportsScreenState extends State<ReportsScreen> {
   @override
   void initState() {
     super.initState();
-    _load();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _sourceId = context.read<SelectedSourceCubit>().state.selectedSourceId;
+      _load();
+    });
   }
 
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      final items = await _api.getReports();
-      setState(() => _items = items);
+      final sources = await _sourcesApi.listSources();
+      final items = await _api.getReports(sourceId: _sourceId);
+      if (!mounted) return;
+      setState(() {
+        _sources = sources;
+        _items = items;
+      });
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${AppLocalizations.of(context).translate('failed')}: $e')));
     } finally {
@@ -57,9 +72,23 @@ class _ReportsScreenState extends State<ReportsScreen> {
     return DateTime.now();
   }
 
+  String _insightLine(AppLocalizations loc, Map<String, dynamic> report) {
+    final insight = report['insight'];
+    if (insight is! Map) return '';
+    final action = loc.actionLabel((insight['dominant_action'] ?? 'unknown').toString());
+    final samples = insight['total_samples'] ?? 0;
+    final falls = insight['fall_detected'] == true;
+    return loc.translate('insight_line', {
+      'action': action,
+      'samples': samples,
+      'fall_suffix': falls ? loc.translate('insight_fall_suffix') : '',
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final loc = AppLocalizations.of(context);
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
@@ -80,6 +109,31 @@ class _ReportsScreenState extends State<ReportsScreen> {
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                 children: [
                   _HeroCard(total: _items.length, totalWindowMs: _totalWindowMs),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      FilterChip(
+                        label: Text(loc.translate('all_sources')),
+                        selected: _sourceId == null,
+                        onSelected: (_) {
+                          setState(() => _sourceId = null);
+                          _load();
+                        },
+                      ),
+                      ..._sources.map(
+                        (s) => FilterChip(
+                          label: Text(s.name.isEmpty ? s.id : s.name),
+                          selected: _sourceId == s.id,
+                          onSelected: (_) {
+                            setState(() => _sourceId = s.id);
+                            _load();
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: 16),
                   if (_loading)
                     const Padding(
@@ -91,7 +145,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
                   else
                     ..._items.take(50).map((item) {
                       final report = item as Map<String, dynamic>;
-                      final title = (report['title'] ?? 'Report').toString();
+                      final title =
+                          (report['title'] ?? loc.translate('default_report')).toString();
                       final windowMs = report['window_ms'];
                       final generatedAt = _readTimestamp(report);
                       final color = _reportColor(title);
@@ -121,7 +176,14 @@ class _ReportsScreenState extends State<ReportsScreen> {
                                     children: [
                                       Text(title, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
                                       const SizedBox(height: 4),
-                                      Text('${AppLocalizations.of(context).translate('window')}: ${windowMs ?? '-'} ms', style: theme.textTheme.bodySmall),
+                                      Text(
+                                        '${loc.translate('window')}: ${windowMs ?? '-'} ${loc.translate('ms_unit')}',
+                                        style: theme.textTheme.bodySmall,
+                                      ),
+                                      if (_insightLine(loc, report).isNotEmpty) ...[
+                                        const SizedBox(height: 4),
+                                        Text(_insightLine(loc, report), style: theme.textTheme.bodySmall),
+                                      ],
                                       const SizedBox(height: 6),
                                       Text(DateFormat('dd/MM/yyyy HH:mm:ss').format(generatedAt), style: theme.textTheme.bodySmall),
                                     ],
@@ -159,6 +221,7 @@ class _HeroCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context);
     final theme = Theme.of(context);
     return Card(
       elevation: 0,
@@ -189,16 +252,22 @@ class _HeroCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Reports', style: theme.textTheme.titleLarge?.copyWith(color: Colors.white, fontWeight: FontWeight.w800)),
+                  Text(loc.translate('reports'), style: theme.textTheme.titleLarge?.copyWith(color: Colors.white, fontWeight: FontWeight.w800)),
                   const SizedBox(height: 6),
-                  Text('Summaries generated from the backend history pipeline and monitoring windows.', style: theme.textTheme.bodyMedium?.copyWith(color: Colors.white.withOpacity(0.88))),
+                  Text(loc.translate('reports_desc'), style: theme.textTheme.bodyMedium?.copyWith(color: Colors.white.withOpacity(0.88))),
                   const SizedBox(height: 10),
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
                     children: [
-                      _Badge(label: '$total reports', color: Colors.white),
-                      _Badge(label: '$totalWindowMs ms window', color: const Color(0xFF1FBF9B)),
+                      _Badge(
+                        label: loc.translate('reports_badge', {'count': total}),
+                        color: Colors.white,
+                      ),
+                      _Badge(
+                        label: loc.translate('window_ms_badge', {'ms': totalWindowMs}),
+                        color: const Color(0xFF1FBF9B),
+                      ),
                     ],
                   ),
                 ],
@@ -257,6 +326,7 @@ class _EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context);
     final theme = Theme.of(context);
     return Card(
       elevation: 0,
@@ -267,14 +337,14 @@ class _EmptyState extends StatelessWidget {
           children: [
             Icon(Icons.description_outlined, size: 48, color: theme.colorScheme.outline),
             const SizedBox(height: 12),
-            Text('No reports available', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+            Text(loc.translate('no_reports_available'), style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
             const SizedBox(height: 6),
-            Text('Refresh once the backend generates monitoring summaries.', style: theme.textTheme.bodyMedium, textAlign: TextAlign.center),
+            Text(loc.translate('refresh_reports_body'), style: theme.textTheme.bodyMedium, textAlign: TextAlign.center),
             const SizedBox(height: 16),
             OutlinedButton.icon(
               onPressed: onRefresh,
               icon: const Icon(Icons.refresh_rounded),
-              label: const Text('Refresh'),
+              label: Text(loc.translate('refresh')),
             ),
           ],
         ),

@@ -1,11 +1,8 @@
 import 'package:flutter/material.dart';
 
-class StatsPanel extends StatelessWidget {
-  final String action;
-  final double confidence;
-  final bool isFalling;
-  final DateTime timestamp;
+import '../../core/l10n/app_localizations.dart';
 
+class StatsPanel extends StatelessWidget {
   const StatsPanel({
     super.key,
     required this.action,
@@ -14,21 +11,27 @@ class StatsPanel extends StatelessWidget {
     required this.timestamp,
   });
 
-  String get timeString {
+  final String action;
+  final double confidence;
+  final bool isFalling;
+  final DateTime timestamp;
+
+  String _timeString(AppLocalizations loc) {
     final now = DateTime.now();
     final diff = now.difference(timestamp);
 
     if (diff.inSeconds < 60) {
-      return '${diff.inSeconds}s ago';
-    } else if (diff.inMinutes < 60) {
-      return '${diff.inMinutes}m ago';
-    } else {
-      return '${diff.inHours}h ago';
+      return loc.translate('time_ago_s', {'n': diff.inSeconds});
     }
+    if (diff.inMinutes < 60) {
+      return loc.translate('time_ago_m', {'n': diff.inMinutes});
+    }
+    return loc.translate('time_ago_h', {'n': diff.inHours});
   }
 
   @override
   Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context);
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final isDark = theme.brightness == Brightness.dark;
@@ -48,7 +51,7 @@ class StatsPanel extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    'Live Statistics',
+                    loc.translate('live_statistics'),
                     style: theme.textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w700,
                     ),
@@ -70,9 +73,9 @@ class StatsPanel extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(width: 6),
-                        const Text(
-                          'Live',
-                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                        Text(
+                          loc.translate('live'),
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
                         ),
                       ],
                     ),
@@ -81,24 +84,26 @@ class StatsPanel extends StatelessWidget {
               ),
               const Divider(height: 16),
               _StatRow(
-                label: 'Current Action',
-                value: action,
+                label: loc.translate('current_action'),
+                value: loc.actionLabel(action),
                 icon: Icons.directions_walk,
               ),
               _StatRow(
-                label: 'Confidence',
+                label: loc.translate('confidence'),
                 value: '${(confidence * 100).toStringAsFixed(1)}%',
                 icon: Icons.analytics,
               ),
               _StatRow(
-                label: 'Status',
-                value: isFalling ? 'FALL' : 'SAFE',
+                label: loc.translate('status'),
+                value: isFalling
+                    ? loc.translate('fall_upper')
+                    : loc.translate('safe'),
                 icon: isFalling ? Icons.warning : Icons.check_circle,
                 valueColor: isFalling ? Colors.red : const Color(0xFF1FBF9B),
               ),
               _StatRow(
-                label: 'Last Update',
-                value: timeString,
+                label: loc.translate('last_update'),
+                value: _timeString(loc),
                 icon: Icons.schedule,
               ),
             ],
@@ -110,17 +115,17 @@ class StatsPanel extends StatelessWidget {
 }
 
 class _StatRow extends StatelessWidget {
-  final String label;
-  final String value;
-  final IconData icon;
-  final Color? valueColor;
-
   const _StatRow({
     required this.label,
     required this.value,
     required this.icon,
     this.valueColor,
   });
+
+  final String label;
+  final String value;
+  final IconData icon;
+  final Color? valueColor;
 
   @override
   Widget build(BuildContext context) {

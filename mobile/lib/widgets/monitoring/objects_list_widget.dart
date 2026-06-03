@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/l10n/app_localizations.dart';
 import '../../models/detected_object.dart';
 
 class ObjectsListWidget extends StatelessWidget {
@@ -12,6 +13,7 @@ class ObjectsListWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context);
     final theme = Theme.of(context);
     final nonPeopleObjects = objects.where((obj) => !obj.isPerson).toList();
 
@@ -25,7 +27,7 @@ class ObjectsListWidget extends StatelessWidget {
               Icon(Icons.check_circle_outline, color: theme.textTheme.bodySmall?.color),
               const SizedBox(width: 12),
               Text(
-                'No other objects detected',
+                loc.translate('no_objects_detected'),
                 style: theme.textTheme.bodyMedium,
               ),
             ],
@@ -46,7 +48,7 @@ class ObjectsListWidget extends StatelessWidget {
                 Icon(Icons.category, color: theme.colorScheme.primary),
                 const SizedBox(width: 8),
                 Text(
-                  'Objects Detected (${nonPeopleObjects.length})',
+                  loc.translate('objects_detected', {'count': nonPeopleObjects.length}),
                   style: theme.textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.w700,
                   ),
@@ -65,7 +67,7 @@ class ObjectsListWidget extends StatelessWidget {
             ),
             itemBuilder: (context, index) {
               final obj = nonPeopleObjects[index];
-              return _buildObjectTile(obj);
+              return _buildObjectTile(context, obj);
             },
           ),
         ],
@@ -73,7 +75,8 @@ class ObjectsListWidget extends StatelessWidget {
     );
   }
 
-  Widget _buildObjectTile(DetectedObject obj) {
+  Widget _buildObjectTile(BuildContext context, DetectedObject obj) {
+    final loc = AppLocalizations.of(context);
     final color = _getObjectColor(obj.label);
 
     return ListTile(
@@ -87,11 +90,11 @@ class ObjectsListWidget extends StatelessWidget {
         child: Icon(Icons.layers, color: color),
       ),
       title: Text(
-        obj.objectType,
+        loc.objectLabel(obj.label),
         style: const TextStyle(fontWeight: FontWeight.bold),
       ),
       subtitle: Text(
-        'Class ID: ${obj.classId}',
+        loc.translate('class_id_label', {'id': obj.classId}),
         style: TextStyle(color: Colors.grey[600], fontSize: 12),
       ),
       trailing: Chip(

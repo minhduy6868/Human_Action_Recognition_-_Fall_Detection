@@ -17,8 +17,16 @@ settings = get_settings()
 
 
 class AlertEngine:
-    def __init__(self, state: RealtimeState) -> None:
+    def __init__(
+        self,
+        state: RealtimeState,
+        *,
+        user_id: str | None = None,
+        source_id: str | None = None,
+    ) -> None:
         self._state = state
+        self._user_id = user_id
+        self._source_id = source_id
         self._store = PostgresStore()
         self._last_anomaly_check_ms = 0
         self._last_abnormal_signature = ""
@@ -90,12 +98,23 @@ class AlertEngine:
             },
         )
         recorded = self._state.record_alert(alert)
-        self._publish_alerts([recorded])
+        self._publish_alerts(
+            [recorded],
+            user_id=self._user_id,
+            source_id=self._source_id,
+        )
         self._last_abnormal_signature = signature
         self._last_abnormal_alert_ms = status.timestamp_ms
         return [recorded]
 
-    def generate_summary_report(self, window_ms: int, persist: bool = True) -> SummaryReportResponse:
+    def generate_summary_report(
+        self,
+        window_ms: int,
+        persist: bool = True,
+        *,
+        user_id: str | None = None,
+        source_id: str | None = None,
+    ) -> SummaryReportResponse:
         now_ms = int(time.time() * 1000)
         insight = self._state.activity_insight(window_ms=window_ms, now_ms=now_ms)
         alert_counts = self._count_alerts(window_ms=window_ms, now_ms=now_ms)
@@ -109,16 +128,39 @@ class AlertEngine:
 
         if persist:
             report = self._state.record_report(report)
-            self._store.insert_report(report.model_dump())
+            payload = report.model_dump()
+            payload["user_id"] = user_id
+            payload["source_id"] = source_id
+            insight_raw = payload.get("insight")
+            if hasattr(insight_raw, "model_dump"):
+                payload["insight"] = insight_raw.model_dump()
+            self._store.insert_report(payload)
 
         return report
 
-    def publish_alerts(self, alerts: Iterable[AlertEvent]) -> None:
-        self._publish_alerts(alerts)
+    def publish_alerts(
+        self,
+        alerts: Iterable[AlertEvent],
+        *,
+        user_id: str | None = None,
+        source_id: str | None = None,
+    ) -> None:
+        self._publish_alerts(alerts, user_id=user_id, source_id=source_id)
 
-    def _publish_alerts(self, alerts: Iterable[AlertEvent]) -> None:
+    def _publish_alerts(
+        self,
+        alerts: Iterable[AlertEvent],
+        *,
+        user_id: str | None = None,
+        source_id: str | None = None,
+    ) -> None:
+        resolved_user = user_id if user_id is not None else self._user_id
+        resolved_source = source_id if source_id is not None else self._source_id
         for alert in alerts:
-            self._store.insert_alert(alert.model_dump())
+            payload = alert.model_dump()
+            payload["user_id"] = resolved_user
+            payload["source_id"] = resolved_source
+            self._store.insert_alert(payload)
 
     def _count_alerts(self, window_ms: int, now_ms: int) -> dict[str, int]:
         counts: dict[str, int] = {}

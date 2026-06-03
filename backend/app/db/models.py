@@ -58,8 +58,14 @@ class SourceConnection(Base):
 
 class AlertRecord(Base):
     __tablename__ = "alerts"
+    __table_args__ = (
+        Index("idx_alerts_user_id", "user_id"),
+        Index("idx_alerts_timestamp_ms", "timestamp_ms"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    source_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     alert_type: Mapped[str] = mapped_column(String(50), nullable=False)
     severity: Mapped[str] = mapped_column(String(50), nullable=False)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -75,8 +81,22 @@ class AlertRecord(Base):
 
 class SummaryReportRecord(Base):
     __tablename__ = "summary_reports"
+    __table_args__ = (
+        Index("idx_summary_reports_user_id", "user_id"),
+        Index("idx_summary_reports_source_id", "source_id"),
+        Index("idx_summary_reports_generated_at_ms", "generated_at_ms"),
+        Index(
+            "idx_summary_reports_user_source_window",
+            "user_id",
+            "source_id",
+            "window_ms",
+            unique=True,
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    source_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     window_ms: Mapped[int] = mapped_column(Integer, nullable=False)
     generated_at_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
@@ -248,7 +268,10 @@ class DetectionLog(Base):
 
 class ChatHistory(Base):
     __tablename__ = "chat_history"
-    __table_args__ = (Index("idx_chat_history_created_at", "created_at"),)
+    __table_args__ = (
+        Index("idx_chat_history_created_at", "created_at"),
+        Index("idx_chat_history_user_id", "user_id"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[str | None] = mapped_column(String(36), nullable=True)

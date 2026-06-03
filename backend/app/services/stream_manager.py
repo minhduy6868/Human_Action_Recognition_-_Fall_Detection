@@ -50,11 +50,20 @@ class StreamManager:
 
     def start(self, source_id: str, user_id: str | None, source_type: str, source_url: str) -> StreamSession:
         if source_id in self._sessions:
-            return self._sessions[source_id]
+            existing = self._sessions[source_id]
+            if existing.user_id != user_id:
+                logger.warning(
+                    "Rejecting stream takeover: source %s belongs to user %s, not %s",
+                    source_id,
+                    existing.user_id,
+                    user_id,
+                )
+                raise PermissionError("Source session belongs to another user")
+            return existing
 
         settings = _build_settings_for_source(source_type, source_url, source_id)
         state = RealtimeState(history_size=settings.history_size)
-        alert_engine = AlertEngine(state)
+        alert_engine = AlertEngine(state, user_id=user_id, source_id=source_id)
         notification_service = NotificationService()
         service = StreamService(
             settings,
@@ -86,21 +95,28 @@ class StreamManager:
         logger.info("Stopped stream session: %s", source_id)
         return True
 
-    def get(self, source_id: str) -> StreamSession | None:
-        return self._sessions.get(source_id)
+    def get(self, source_id: str, user_id: str | None = None) -> StreamSession | None:
+        session = self._sessions.get(source_id)
+        if session is None:
+            return None
+        if user_id is not None and session.user_id != user_id:
+            return None
+        return session
 
-    def list(self) -> list[StreamSession]:
-        return list(self._sessions.values())
+    def list(self, user_id: str | None = None) -> list[StreamSession]:
+        sessions = list(self._sessions.values())
+        if user_id is None:
+            return sessions
+        return [session for session in sessions if session.user_id == user_id]
 
     def get_state_for_user(self, user_id: str, source_id: str | None = None) -> RealtimeState | None:
         if source_id:
-            session = self.get(source_id)
-            if session and session.user_id == user_id:
+            session = self.get(source_id, user_id=user_id)
+            if session is not None:
                 return session.state
 
-        for session in self._sessions.values():
-            if session.user_id == user_id:
-                return session.state
+        for session in self.list(user_id=user_id):
+            return session.state
         return None
 
 
