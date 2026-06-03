@@ -58,6 +58,7 @@ class _LogsScreenState extends State<LogsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context);
     final theme = Theme.of(context);
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -90,7 +91,7 @@ class _LogsScreenState extends State<LogsScreen> {
                   else
                     ..._items.take(60).map((item) {
                       final log = item as Map<String, dynamic>;
-                      final title = (log['action'] ?? log['level'] ?? 'Log').toString();
+                      final title = (log['action'] ?? log['level'] ?? loc.translate('log_default')).toString();
                       final message = (log['message'] ?? '').toString();
                       final timestamp = _readTimestamp(log);
                       final color = _logColor(message, title);
@@ -126,7 +127,7 @@ class _LogsScreenState extends State<LogsScreen> {
                                     ],
                                   ),
                                 ),
-                                _LevelChip(label: _levelLabel(message, title), color: color),
+                                _LevelChip(label: _levelLabel(context, message, title), color: color),
                               ],
                             ),
                           ),
@@ -150,12 +151,13 @@ class _LogsScreenState extends State<LogsScreen> {
     return Icons.receipt_long_rounded;
   }
 
-  String _levelLabel(String message, String title) {
+  String _levelLabel(BuildContext context, String message, String title) {
     final text = '$title $message'.toLowerCase();
-    if (text.contains('error') || text.contains('fail')) return 'ERROR';
-    if (text.contains('warn')) return 'WARN';
-    if (text.contains('info')) return 'INFO';
-    return 'LOG';
+    final loc = AppLocalizations.of(context);
+    if (text.contains('error') || text.contains('fail')) return loc.translate('level_error');
+    if (text.contains('warn')) return loc.translate('level_warn');
+    if (text.contains('info')) return loc.translate('level_info');
+    return loc.translate('level_log');
   }
 
   Color _logColor(String message, String title) {
@@ -174,6 +176,7 @@ class _HeroCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context);
     final theme = Theme.of(context);
     return Card(
       elevation: 0,
@@ -204,16 +207,22 @@ class _HeroCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('System logs', style: theme.textTheme.titleLarge?.copyWith(color: Colors.white, fontWeight: FontWeight.w800)),
+                  Text(loc.translate('logs'), style: theme.textTheme.titleLarge?.copyWith(color: Colors.white, fontWeight: FontWeight.w800)),
                   const SizedBox(height: 6),
-                  Text('Inspect backend activity, warnings, and operational details in a clean log view.', style: theme.textTheme.bodyMedium?.copyWith(color: Colors.white.withOpacity(0.88))),
+                  Text(loc.translate('logs_desc'), style: theme.textTheme.bodyMedium?.copyWith(color: Colors.white.withOpacity(0.88))),
                   const SizedBox(height: 10),
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
                     children: [
-                      _Badge(label: '$total entries', color: Colors.white),
-                      _Badge(label: '$errorCount alerts', color: const Color(0xFFF36B4E)),
+                      _Badge(
+                        label: loc.translate('entries_badge', {'count': total}),
+                        color: Colors.white,
+                      ),
+                      _Badge(
+                        label: loc.translate('alerts_badge', {'count': errorCount}),
+                        color: const Color(0xFFF36B4E),
+                      ),
                     ],
                   ),
                 ],
@@ -272,6 +281,7 @@ class _EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context);
     final theme = Theme.of(context);
     return Card(
       elevation: 0,
@@ -282,14 +292,14 @@ class _EmptyState extends StatelessWidget {
           children: [
             Icon(Icons.receipt_long_rounded, size: 48, color: theme.colorScheme.outline),
             const SizedBox(height: 12),
-            Text('No logs available', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+            Text(loc.translate('no_logs_available'), style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
             const SizedBox(height: 6),
-            Text('Try refreshing after the backend writes new log events.', style: theme.textTheme.bodyMedium, textAlign: TextAlign.center),
+            Text(loc.translate('refresh_logs_body'), style: theme.textTheme.bodyMedium, textAlign: TextAlign.center),
             const SizedBox(height: 16),
             OutlinedButton.icon(
               onPressed: onRefresh,
               icon: const Icon(Icons.refresh_rounded),
-              label: const Text('Refresh'),
+              label: Text(loc.translate('refresh')),
             ),
           ],
         ),

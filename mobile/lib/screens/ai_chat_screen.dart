@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:get_it/get_it.dart';
-import 'package:intl/intl.dart';
 
-import '../services/monitoring_api.dart';
 import '../core/l10n/app_localizations.dart';
+import '../models/source.dart';
+import '../services/monitoring_api.dart';
+import '../state/selected_source/selected_source_cubit.dart';
+import '../state/selected_source/selected_source_state.dart';
+import '../utils/plan_limit_dialog.dart';
 
 class AiChatScreen extends StatefulWidget {
   const AiChatScreen({super.key});
@@ -12,503 +16,332 @@ class AiChatScreen extends StatefulWidget {
   State<AiChatScreen> createState() => _AiChatScreenState();
 }
 
-enum _AssistantMode { databaseSummary, realtimeAssistant }
-
 class _AiChatScreenState extends State<AiChatScreen> {
   final _api = GetIt.instance<MonitoringApi>();
   final _controller = TextEditingController();
-  final _scrollController = ScrollController();
-  final _messages = <Map<String, dynamic>>[];
+  final _scroll = ScrollController();
+  final List<({String text, bool isAi})> _messages = [];
 
   bool _loading = false;
-  _AssistantMode _mode = _AssistantMode.databaseSummary;
-  int _selectedWindowMs = 24 * 60 * 60 * 1000;
-
-  static const _windows = [
-    (label: '1h', value: 60 * 60 * 1000),
-    (label: '6h', value: 6 * 60 * 60 * 1000),
-    (label: '24h', value: 24 * 60 * 60 * 1000),
-    (label: '7d', value: 7 * 24 * 60 * 60 * 1000),
-  ];
+  bool _welcomeAdded = false;
+  int _windowMs = 6 * 60 * 60 * 1000;
+  List<Source> _sources = [];
+  String? _sourceId;
 
   @override
   void initState() {
     super.initState();
-    _initializeChat();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncSourcesFromScope());
   }
 
-  void _initializeChat() {
-    _addMessage(
-      'Tôi có thể tóm tắt hành động từ database theo 1h, 6h, 24h hoặc 7 ngày. Hãy nhập câu hỏi như “Hôm nay có gì bất thường?” hoặc “Tóm tắt 6 giờ gần nhất”.',
-      isAi: true,
-      meta: {'kind': 'welcome'},
-    );
+  void _syncSourcesFromScope() {
+    final cubit = context.read<SelectedSourceCubit>();
+    final state = cubit.state;
+    setState(() {
+      _sources = state.sources;
+      _sourceId = state.selectedSourceId;
+    });
+    if (state.sources.isEmpty) {
+      cubit.refreshSources().then((_) {
+        if (!mounted) return;
+        final refreshed = context.read<SelectedSourceCubit>().state;
+        setState(() {
+          _sources = refreshed.sources;
+          _sourceId = refreshed.selectedSourceId;
+        });
+      });
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_welcomeAdded) {
+      _welcomeAdded = true;
+      _bootstrapMessages();
+    }
+  }
+
+  Future<void> _bootstrapMessages() async {
+    final loc = AppLocalizations.of(context);
+    final seeded = <({String text, bool isAi})>[
+      (text: loc.translate('ai_welcome'), isAi: true),
+    ];
+    try {
+      final rows = await _api.getChatHistory(limit: 40);
+      final historical = <({String text, bool isAi})>[];
+      for (final row in rows.reversed) {
+        if (row is! Map) continue;
+        final map = Map<String, dynamic>.from(row);
+        final q = (map['question'] ?? '').toString().trim();
+        final a = (map['answer'] ?? '').toString().trim();
+        if (q.isNotEmpty) historical.add((text: q, isAi: false));
+        if (a.isNotEmpty) historical.add((text: a, isAi: true));
+      }
+      seeded.addAll(historical);
+    } catch (_) {}
+    if (!mounted) return;
+    setState(() {
+      _messages
+        ..clear()
+        ..addAll(seeded);
+    });
+  }
+
+  String _cameraLabel(AppLocalizations loc) {
+    if (_sourceId == null) return loc.translate('ai_all_cameras');
+    for (final s in _sources) {
+      if (s.id == _sourceId) return s.name.isEmpty ? s.id : s.name;
+    }
+    return _sourceId!;
   }
 
   @override
   void dispose() {
     _controller.dispose();
-    _scrollController.dispose();
+    _scroll.dispose();
     super.dispose();
   }
 
-  void _addMessage(
-    String text, {
-    required bool isAi,
-    Map<String, dynamic>? meta,
-  }) {
-    setState(() {
-      _messages.add({
-        'text': text,
-        'isAi': isAi,
-        'timestamp': DateTime.now(),
-        'meta': meta ?? const <String, dynamic>{},
-      });
-    });
-    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
-  }
-
-  void _scrollToBottom() {
-    if (!_scrollController.hasClients) return;
-    _scrollController.animateTo(
-      _scrollController.position.maxScrollExtent,
-      duration: const Duration(milliseconds: 220),
-      curve: Curves.easeOut,
-    );
-  }
-
-  Future<void> _sendMessage() async {
-    final userMessage = _controller.text.trim();
-    if (userMessage.isEmpty || _loading) return;
-
+  Future<void> _send([String? preset]) async {
+    final loc = AppLocalizations.of(context);
+    final question = (preset ?? _controller.text).trim();
+    if (question.isEmpty || _loading) return;
     _controller.clear();
-    _addMessage(userMessage, isAi: false);
+    setState(() {
+      _messages.add((text: question, isAi: false));
+      _loading = true;
+    });
+    _scrollBottom();
 
-    setState(() => _loading = true);
     try {
-      final now = DateTime.now().toUtc();
-      final from = now.subtract(Duration(milliseconds: _selectedWindowMs));
-      final Map<String, dynamic> data;
-
-      if (_mode == _AssistantMode.databaseSummary) {
-        data = await _api.summarizeActivity(
-          question: userMessage,
-          from: from,
-          to: now,
-        );
-      } else {
-        data = await _api.askAssistant(
-          userMessage,
-          windowMs: _selectedWindowMs,
-        );
-      }
-
-      final answer = (data['answer'] ?? data['message'] ?? data['summary'] ?? 'Không có phản hồi từ backend.').toString();
-      final insight = data['insight'] as Map<String, dynamic>? ?? const <String, dynamic>{};
-      final meta = _buildAnswerMeta(data, insight);
-      _addMessage(answer, isAi: true, meta: meta);
+      final data = await _api.askAssistant(
+        question,
+        windowMs: _windowMs,
+        sourceId: _sourceId,
+      );
+      final answer = (data['answer'] ?? data['message'] ?? '')
+          .toString()
+          .trim();
+      if (!mounted) return;
+      setState(() {
+        _messages.add((
+          text: answer.isEmpty ? loc.translate('ai_no_data') : answer,
+          isAi: true,
+        ));
+      });
     } catch (e) {
-      _addMessage('Không thể lấy dữ liệu lúc này: $e', isAi: true, meta: {'kind': 'error'});
+      if (!mounted) return;
+      if (await PlanLimitDialog.handleError(context, e)) return;
+      setState(() => _messages.add((
+        text: loc.translate('ai_error_prefix', {'message': '$e'}),
+        isAi: true,
+      )));
     } finally {
       if (mounted) setState(() => _loading = false);
+      _scrollBottom();
     }
   }
 
-  Map<String, dynamic> _buildAnswerMeta(Map<String, dynamic> data, Map<String, dynamic> insight) {
-    final labels = (insight['segments'] as List<dynamic>?)?.length ?? 0;
-    return {
-      'intent': data['intent']?.toString() ?? '',
-      'window_ms': data['window_ms'] ?? insight['window_ms'] ?? _selectedWindowMs,
-      'total_samples': insight['total_samples'] ?? 0,
-      'dominant_action': insight['dominant_action']?.toString() ?? 'unknown',
-      'dominant_action_ratio': insight['dominant_action_ratio'] ?? 0,
-      'fall_detected': insight['fall_detected'] ?? false,
-      'segments': labels,
-    };
+  void _scrollBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scroll.hasClients) return;
+      _scroll.animateTo(
+        _scroll.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
+      );
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final loc = AppLocalizations.of(context);
-
-    return Scaffold(
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        title: Text(loc.translate('ai_assistant')),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        actions: [
-          IconButton(
-            tooltip: 'Refresh summary',
-            onPressed: _loading ? null : _sendMessage,
-            icon: const Icon(Icons.auto_awesome_rounded),
-          ),
-        ],
-      ),
-      body: Stack(
-        children: [
-          const _Backdrop(),
-          SafeArea(
-            child: Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: SegmentedButton<_AssistantMode>(
-                              segments: const [
-                                ButtonSegment(
-                                  value: _AssistantMode.databaseSummary,
-                                  icon: Icon(Icons.storage_rounded),
-                                  label: Text('Database'),
-                                ),
-                                ButtonSegment(
-                                  value: _AssistantMode.realtimeAssistant,
-                                  icon: Icon(Icons.flash_on_rounded),
-                                  label: Text('Realtime'),
-                                ),
-                              ],
-                              selected: {_mode},
-                              onSelectionChanged: (value) {
-                                setState(() => _mode = value.first);
-                              },
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: _windows.map((item) {
-                          final selected = _selectedWindowMs == item.value;
-                          return ChoiceChip(
-                            label: Text(item.label),
-                            selected: selected,
-                            onSelected: (_) {
-                              setState(() => _selectedWindowMs = item.value);
-                            },
-                          );
-                        }).toList(),
-                      ),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: ListView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                    itemCount: _messages.length,
-                    itemBuilder: (context, index) {
-                      final msg = _messages[index];
-                      final isAi = msg['isAi'] as bool;
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: _MessageBubble(
-                          text: msg['text'] as String,
-                          isAi: isAi,
-                          timestamp: msg['timestamp'] as DateTime,
-                          meta: msg['meta'] as Map<String, dynamic>,
-                        ),
-                      );
-                    },
-                  ),
-                ),
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
-                  padding: EdgeInsets.fromLTRB(
-                    16,
-                    12,
-                    16,
-                    12 + MediaQuery.of(context).viewInsets.bottom,
-                  ),
-                  decoration: BoxDecoration(
-                    color: theme.scaffoldBackgroundColor.withOpacity(0.96),
-                    border: Border(top: BorderSide(color: theme.dividerColor)),
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _controller,
-                          minLines: 1,
-                          maxLines: 3,
-                          textInputAction: TextInputAction.send,
-                          onSubmitted: (_) => _sendMessage(),
-                          decoration: InputDecoration(
-                            hintText: _mode == _AssistantMode.databaseSummary
-                                ? 'Ví dụ: Tóm tắt 6 giờ gần nhất, có té ngã không?'
-                                : 'Ví dụ: Có cảnh báo nào mới không?',
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(24),
-                            ),
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 14,
-                            ),
-                          ),
-                          enabled: !_loading,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      FloatingActionButton(
-                        mini: true,
-                        onPressed: _loading ? null : _sendMessage,
-                        child: _loading
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : const Icon(Icons.send_rounded),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _MessageBubble extends StatelessWidget {
-  const _MessageBubble({
-    required this.text,
-    required this.isAi,
-    required this.timestamp,
-    required this.meta,
-  });
-
-  final String text;
-  final bool isAi;
-  final DateTime timestamp;
-  final Map<String, dynamic> meta;
-
-  @override
-  Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    final bubbleColor = isAi
-        ? theme.brightness == Brightness.dark
-            ? const Color(0xFF101B25)
-            : Colors.white
-        : colorScheme.secondary;
 
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisAlignment: isAi ? MainAxisAlignment.start : MainAxisAlignment.end,
-      children: [
-        if (isAi) ...[
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              color: colorScheme.secondary,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: const Icon(Icons.smart_toy_rounded, color: Colors.white, size: 18),
-          ),
-          const SizedBox(width: 8),
-        ],
-        Flexible(
-          child: Container(
-            decoration: BoxDecoration(
-              color: bubbleColor,
-              borderRadius: BorderRadius.only(
-                topLeft: const Radius.circular(16),
-                topRight: const Radius.circular(16),
-                bottomLeft: Radius.circular(isAi ? 4 : 16),
-                bottomRight: Radius.circular(isAi ? 16 : 4),
-              ),
-              border: Border.all(
-                color: isAi ? theme.dividerColor.withOpacity(0.35) : colorScheme.secondary,
-              ),
-            ),
-            padding: const EdgeInsets.all(14),
+    return BlocListener<SelectedSourceCubit, SelectedSourceState>(
+      listenWhen: (prev, next) =>
+          prev.selectedSourceId != next.selectedSourceId ||
+          prev.sources.length != next.sources.length,
+      listener: (_, state) {
+        setState(() {
+          _sources = state.sources;
+          _sourceId = state.selectedSourceId;
+        });
+      },
+      child: Scaffold(
+      appBar: AppBar(title: Text(loc.translate('ai_assistant'))),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  text,
-                  style: TextStyle(
-                    color: isAi ? theme.textTheme.bodyMedium?.color : Colors.white,
-                    height: 1.35,
-                  ),
+                Row(
+                  children: [
+                    const Icon(Icons.videocam_outlined, size: 18),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        loc.translate('ai_camera_label', {'name': _cameraLabel(loc)}),
+                        style: theme.textTheme.bodySmall,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
                 ),
-                if (meta.isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: _metaChips(meta),
+                if (_sources.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: _sources
+                          .map(
+                            (s) => Padding(
+                              padding: const EdgeInsets.only(right: 6),
+                              child: ChoiceChip(
+                                label: Text(s.name.isEmpty ? s.id : s.name),
+                                selected: _sourceId == s.id,
+                                visualDensity: VisualDensity.compact,
+                                onSelected: _loading
+                                    ? null
+                                    : (_) {
+                                        setState(() => _sourceId = s.id);
+                                        context
+                                            .read<SelectedSourceCubit>()
+                                            .selectSource(s.id);
+                                      },
+                              ),
+                            ),
+                          )
+                          .toList(),
+                    ),
                   ),
                 ],
                 const SizedBox(height: 8),
-                Text(
-                  DateFormat('HH:mm').format(timestamp),
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: isAi ? theme.textTheme.bodySmall?.color : Colors.white.withOpacity(0.8),
-                  ),
+                Row(
+                  children: [
+                    _timeChip(loc, 'time_chip_1h', 3600000),
+                    const SizedBox(width: 6),
+                    _timeChip(loc, 'time_chip_6h', 21600000),
+                    const SizedBox(width: 6),
+                    _timeChip(loc, 'time_chip_24h', 86400000),
+                  ],
                 ),
               ],
             ),
           ),
-        ),
-        if (!isAi) ...[
-          const SizedBox(width: 8),
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              color: colorScheme.surfaceContainer,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Icon(
-              Icons.person_rounded,
-              color: colorScheme.onSurfaceVariant,
-              size: 18,
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-
-  List<Widget> _metaChips(Map<String, dynamic> meta) {
-    final chips = <Widget>[];
-    final intent = meta['intent']?.toString();
-    final windowMs = meta['window_ms'];
-    final totalSamples = meta['total_samples'];
-    final dominantAction = meta['dominant_action']?.toString();
-    final fallDetected = meta['fall_detected'] == true;
-    final segments = meta['segments'];
-
-    if (intent != null && intent.isNotEmpty) {
-      chips.add(_MetaChip(label: intent));
-    }
-    if (windowMs != null) {
-      chips.add(_MetaChip(label: '${_windowText(windowMs)} window'));
-    }
-    if (totalSamples != null) {
-      chips.add(_MetaChip(label: '$totalSamples samples'));
-    }
-    if (dominantAction != null && dominantAction.isNotEmpty) {
-      chips.add(_MetaChip(label: 'Dominant: $dominantAction'));
-    }
-    if (fallDetected) {
-      chips.add(_MetaChip(label: 'Fall detected', color: const Color(0xFFF36B4E)));
-    }
-    if (segments != null) {
-      chips.add(_MetaChip(label: '$segments segments'));
-    }
-    return chips;
-  }
-
-  String _windowText(dynamic windowMs) {
-    final value = windowMs is num ? windowMs.toInt() : int.tryParse(windowMs?.toString() ?? '0') ?? 0;
-    if (value >= 7 * 24 * 60 * 60 * 1000) return '7d';
-    if (value >= 24 * 60 * 60 * 1000) return '24h';
-    if (value >= 6 * 60 * 60 * 1000) return '6h';
-    return '1h';
-  }
-}
-
-class _MetaChip extends StatelessWidget {
-  const _MetaChip({required this.label, this.color = const Color(0xFF0B2E4C)});
-
-  final String label;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: color,
-          fontWeight: FontWeight.w700,
-          fontSize: 11,
-        ),
-      ),
-    );
-  }
-}
-
-class _Backdrop extends StatelessWidget {
-  const _Backdrop();
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: isDark
-              ? [const Color(0xFF0B1218), const Color(0xFF111E2A)]
-              : [const Color(0xFFF2F6FB), const Color(0xFFF8FBFF)],
-        ),
-      ),
-      child: Stack(
-        children: [
-          Positioned(
-            top: -70,
-            right: -30,
-            child: _GlowBlob(
-              color: const Color(0xFFF36B4E).withOpacity(0.12),
-              size: 180,
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Row(
+              children: [
+                ActionChip(
+                  label: Text(loc.translate('ai_chip_timeline')),
+                  onPressed: _loading
+                      ? null
+                      : () => _send(loc.translate('send_question_timeline')),
+                ),
+                const SizedBox(width: 6),
+                ActionChip(
+                  label: Text(loc.translate('ai_chip_fall')),
+                  onPressed: _loading
+                      ? null
+                      : () => _send(loc.translate('send_question_fall')),
+                ),
+              ],
             ),
           ),
-          Positioned(
-            bottom: -80,
-            left: -30,
-            child: _GlowBlob(
-              color: const Color(0xFF1FBF9B).withOpacity(0.14),
-              size: 200,
+          const Divider(height: 1),
+          Expanded(
+            child: ListView.builder(
+              controller: _scroll,
+              padding: const EdgeInsets.all(12),
+              itemCount: _messages.length + (_loading ? 1 : 0),
+              itemBuilder: (context, i) {
+                if (_loading && i == _messages.length) {
+                  return const Padding(
+                    padding: EdgeInsets.all(8),
+                    child: LinearProgressIndicator(),
+                  );
+                }
+                final m = _messages[i];
+                return Align(
+                  alignment:
+                      m.isAi ? Alignment.centerLeft : Alignment.centerRight,
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    constraints: BoxConstraints(
+                      maxWidth: MediaQuery.sizeOf(context).width * 0.82,
+                    ),
+                    decoration: BoxDecoration(
+                      color: m.isAi
+                          ? theme.colorScheme.surfaceContainerHighest
+                          : theme.colorScheme.primary,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      m.text,
+                      style: TextStyle(
+                        color: m.isAi
+                            ? theme.colorScheme.onSurface
+                            : theme.colorScheme.onPrimary,
+                        height: 1.4,
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          Padding(
+            padding: EdgeInsets.fromLTRB(
+              12,
+              8,
+              12,
+              8 + MediaQuery.viewInsetsOf(context).bottom,
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _controller,
+                    enabled: !_loading,
+                    textInputAction: TextInputAction.send,
+                    onSubmitted: (_) => _send(),
+                    decoration: InputDecoration(
+                      hintText: loc.translate('ai_input_hint'),
+                      isDense: true,
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton.filled(
+                  onPressed: _loading ? null : () => _send(),
+                  icon: const Icon(Icons.send),
+                ),
+              ],
             ),
           ),
         ],
       ),
+      ),
     );
   }
-}
 
-class _GlowBlob extends StatelessWidget {
-  const _GlowBlob({required this.color, required this.size});
-
-  final Color color;
-  final double size;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: color,
-        boxShadow: [
-          BoxShadow(
-            color: color,
-            blurRadius: 90,
-            spreadRadius: 12,
-          ),
-        ],
-      ),
+  Widget _timeChip(AppLocalizations loc, String labelKey, int ms) {
+    final selected = _windowMs == ms;
+    return ChoiceChip(
+      label: Text(loc.translate(labelKey)),
+      selected: selected,
+      visualDensity: VisualDensity.compact,
+      onSelected: (_) => setState(() => _windowMs = ms),
     );
   }
 }

@@ -9,8 +9,8 @@ import '../state/app_settings_cubit.dart';
 import '../services/push_notification_service.dart';
 import '../services/vip_upgrade_launcher.dart';
 import '../core/l10n/app_localizations.dart';
-import './dashboard_screen.dart';
 import './analytics_screen.dart';
+import './dashboard_screen.dart';
 import './ai_chat_screen.dart';
 
 class HomeShell extends StatefulWidget {
@@ -67,7 +67,10 @@ class _HomeShellState extends State<HomeShell> {
       body: IndexedStack(
         index: _selectedIndex,
         children: [
-          DashboardScreen(isActive: _selectedIndex == 0),
+          DashboardScreen(
+            isActive: _selectedIndex == 0,
+            onOpenAnalytics: () => setState(() => _selectedIndex = 1),
+          ),
           const AnalyticsScreen(),
           const AiChatScreen(),
           const _SettingsPanel(),
@@ -168,40 +171,34 @@ class _SettingsPanel extends StatelessWidget {
                 ),
                 const SizedBox(height: 16),
                 _buildSettingsSection(
-                  loc.translate('monitoring'),
+                  loc.translate('records_section'),
                   [
                     _buildSettingsTile(
-                      loc.translate('manage_sources'),
-                      loc.translate('add_edit_remove_cameras'),
-                      Icons.videocam,
-                      () => Navigator.of(context).pushNamed('/sources'),
-                      theme,
-                    ),
-                    _buildSettingsTile(
                       loc.translate('history'),
-                      loc.translate('view_detection_history'),
+                      loc.translate('history_desc'),
                       Icons.history,
                       () => Navigator.of(context).pushNamed('/history'),
                       theme,
                     ),
                     _buildSettingsTile(
-                      loc.translate('summary'),
-                      loc.translate('system_logs'),
-                      Icons.description,
-                      () => Navigator.of(context).pushNamed('/logs'),
-                      theme,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 24),
-                _buildSettingsSection(
-                  loc.translate('reports'),
-                  [
-                    _buildSettingsTile(
                       loc.translate('reports'),
-                      loc.translate('view_activity_reports'),
+                      loc.translate('reports_desc'),
                       Icons.assessment,
                       () => Navigator.of(context).pushNamed('/reports'),
+                      theme,
+                    ),
+                    _buildSettingsTile(
+                      loc.translate('chat_history'),
+                      loc.translate('chat_history_desc'),
+                      Icons.forum_outlined,
+                      () => Navigator.of(context).pushNamed('/chat-history'),
+                      theme,
+                    ),
+                    _buildSettingsTile(
+                      loc.translate('manage_sources'),
+                      loc.translate('add_edit_remove_cameras'),
+                      Icons.videocam,
+                      () => Navigator.of(context).pushNamed('/sources'),
                       theme,
                     ),
                   ],

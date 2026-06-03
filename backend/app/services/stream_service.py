@@ -326,12 +326,20 @@ class StreamService:
                     user_id=self._user_id,
                     source_id=self._source_id,
                 )
-                self._alert_engine.publish_alerts(created_alerts)
+                self._alert_engine.publish_alerts(
+                    created_alerts,
+                    user_id=self._user_id,
+                    source_id=self._source_id,
+                )
             self._alert_engine.observe(status)
 
             event_alerts = self._event_reasoner.observe(status)
             if event_alerts:
-                self._alert_engine.publish_alerts(event_alerts)
+                self._alert_engine.publish_alerts(
+                    event_alerts,
+                    user_id=self._user_id,
+                    source_id=self._source_id,
+                )
 
             if self._settings.adaptive_frame_skip and self._settings.target_fps > 0:
                 elapsed_ms = (time.perf_counter() - loop_started) * 1000.0

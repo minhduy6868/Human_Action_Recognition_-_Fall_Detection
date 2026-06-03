@@ -15,6 +15,7 @@ import 'state/auth/auth_cubit.dart';
 import 'state/auth/auth_state.dart';
 import 'state/camera_monitor/camera_monitor_cubit.dart';
 import 'state/fall_detection/realtime_cubit.dart';
+import 'state/selected_source/selected_source_cubit.dart';
 
 class App extends StatelessWidget {
   const App({super.key});
@@ -33,7 +34,7 @@ class App extends StatelessWidget {
       child: BlocBuilder<AppSettingsCubit, AppSettingsState>(
         builder: (context, settingsState) {
           return MaterialApp(
-            title: 'Video AI Detect',
+            title: AppLocalizations(settingsState.locale).translate('title'),
             debugShowCheckedModeBanner: false,
             theme: AppTheme.lightTheme,
             darkTheme: AppTheme.darkTheme,
@@ -61,6 +62,12 @@ class App extends StatelessWidget {
                   }
                   return MultiBlocProvider(
                     providers: [
+                      BlocProvider(
+                        create: (_) => SelectedSourceCubit(
+                          getIt(),
+                          getIt(),
+                        )..initialize(),
+                      ),
                       BlocProvider(create: (_) => getIt<CameraMonitorCubit>()),
                       BlocProvider(create: (_) => getIt<RealtimeCubit>()),
                     ],
@@ -95,7 +102,7 @@ class _SplashScreen extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             Text(
-              'Preparing workspace...',
+              AppLocalizations.of(context).translate('preparing_workspace'),
               style: theme.textTheme.titleMedium,
             ),
           ],

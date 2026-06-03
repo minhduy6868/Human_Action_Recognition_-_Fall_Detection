@@ -15,6 +15,7 @@ def init_db() -> None:
         Base.metadata.create_all(bind=engine)
         _ensure_detection_log_schema()
         _ensure_telegram_subscriber_schema()
+        _ensure_per_user_schema()
 
 
 def _ensure_detection_log_schema() -> None:
@@ -71,6 +72,28 @@ def _ensure_telegram_subscriber_schema() -> None:
                 """
             )
         )
+
+
+def _ensure_per_user_schema() -> None:
+    statements = [
+        "ALTER TABLE summary_reports ADD COLUMN IF NOT EXISTS user_id TEXT NULL",
+        "ALTER TABLE summary_reports ADD COLUMN IF NOT EXISTS source_id TEXT NULL",
+        "CREATE INDEX IF NOT EXISTS idx_summary_reports_user_id ON summary_reports(user_id)",
+        "CREATE INDEX IF NOT EXISTS idx_summary_reports_source_id ON summary_reports(source_id)",
+        "CREATE INDEX IF NOT EXISTS idx_summary_reports_generated_at_ms ON summary_reports(generated_at_ms DESC)",
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_summary_reports_user_source_window
+            ON summary_reports(user_id, source_id, window_ms)
+        """,
+        "ALTER TABLE alerts ADD COLUMN IF NOT EXISTS user_id TEXT NULL",
+        "ALTER TABLE alerts ADD COLUMN IF NOT EXISTS source_id TEXT NULL",
+        "CREATE INDEX IF NOT EXISTS idx_alerts_user_id ON alerts(user_id)",
+        "CREATE INDEX IF NOT EXISTS idx_alerts_timestamp_ms ON alerts(timestamp_ms DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_chat_history_user_id ON chat_history(user_id)",
+    ]
+    with engine.begin() as conn:
+        for stmt in statements:
+            conn.execute(text(stmt))
 
 
 def seed_admin() -> None:

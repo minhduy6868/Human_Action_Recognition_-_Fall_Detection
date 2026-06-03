@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:get_it/get_it.dart';
 
+import '../core/l10n/app_localizations.dart';
 import '../models/source.dart';
 import '../services/sources_api.dart';
-import '../core/l10n/app_localizations.dart';
+import '../utils/plan_limit_dialog.dart';
 
 class SourcesScreen extends StatefulWidget {
   const SourcesScreen({super.key});
@@ -44,7 +45,15 @@ class _SourcesScreenState extends State<SourcesScreen> {
       await _load();
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${AppLocalizations.of(context).translate('activated')} ${s.name}')));
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${AppLocalizations.of(context).translate('activate_failed')}: $e')));
+      if (!mounted) return;
+      if (await PlanLimitDialog.handleError(context, e)) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${AppLocalizations.of(context).translate('activate_failed')}: $e',
+          ),
+        ),
+      );
     } finally {
       setState(() => _loading = false);
     }
@@ -91,6 +100,10 @@ class _SourcesScreenState extends State<SourcesScreen> {
   }
 
   Future<void> _showCreateDialog() async {
+    if (PlanLimitDialog.isFreePlan(context) && _items.length >= 1) {
+      await PlanLimitDialog.showVipRequiredForSources(context);
+      return;
+    }
     await _showSourceSheet();
   }
 
@@ -196,9 +209,16 @@ class _SourcesScreenState extends State<SourcesScreen> {
                             );
                           } catch (e) {
                             if (!mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('${AppLocalizations.of(context).translate('save_failed')}: $e')),
-                            );
+                            final handled = await PlanLimitDialog.handleError(context, e);
+                            if (!handled) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    '${AppLocalizations.of(context).translate('save_failed')}: $e',
+                                  ),
+                                ),
+                              );
+                            }
                           } finally {
                             if (mounted) setState(() => _loading = false);
                           }
@@ -222,7 +242,7 @@ class _SourcesScreenState extends State<SourcesScreen> {
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text('Manage Sources'),
+        title: Text(AppLocalizations.of(context).translate('manage_sources_title')),
         backgroundColor: Colors.transparent,
         elevation: 0,
         actions: [
@@ -294,24 +314,24 @@ class _SourcesScreenState extends State<SourcesScreen> {
                                     OutlinedButton.icon(
                                       onPressed: () => _showEditDialog(source),
                                       icon: const Icon(Icons.edit_rounded),
-                                      label: const Text('Edit'),
+                                      label: Text(AppLocalizations.of(context).translate('edit')),
                                     ),
                                     if (source.isActive)
                                       FilledButton.icon(
                                         onPressed: () => _stop(source),
                                         icon: const Icon(Icons.stop_circle_rounded),
-                                        label: const Text('Stop'),
+                                        label: Text(AppLocalizations.of(context).translate('stop')),
                                       )
                                     else
                                       FilledButton.icon(
                                         onPressed: () => _activate(source),
                                         icon: const Icon(Icons.play_circle_rounded),
-                                        label: const Text('Activate'),
+                                        label: Text(AppLocalizations.of(context).translate('activate')),
                                       ),
                                     TextButton.icon(
                                       onPressed: () => _delete(source),
                                       icon: const Icon(Icons.delete_outline_rounded),
-                                      label: const Text('Delete'),
+                                      label: Text(AppLocalizations.of(context).translate('delete')),
                                     ),
                                   ],
                                 ),
@@ -373,9 +393,9 @@ class _SourceHeroCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Camera sources', style: theme.textTheme.titleLarge?.copyWith(color: Colors.white, fontWeight: FontWeight.w800)),
+                  Text(AppLocalizations.of(context).translate('camera_sources'), style: theme.textTheme.titleLarge?.copyWith(color: Colors.white, fontWeight: FontWeight.w800)),
                   const SizedBox(height: 6),
-                  Text('Create, edit, activate, or stop streams without leaving the app.', style: theme.textTheme.bodyMedium?.copyWith(color: Colors.white.withOpacity(0.88))),
+                  Text(AppLocalizations.of(context).translate('camera_sources_subtitle'), style: theme.textTheme.bodyMedium?.copyWith(color: Colors.white.withOpacity(0.88))),
                   const SizedBox(height: 10),
                   Wrap(
                     spacing: 8,
@@ -461,14 +481,14 @@ class _EmptyState extends StatelessWidget {
           children: [
             Icon(Icons.video_library_outlined, size: 48, color: theme.colorScheme.outline),
             const SizedBox(height: 12),
-            Text('No sources configured yet', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+            Text(AppLocalizations.of(context).translate('no_sources_configured'), style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
             const SizedBox(height: 6),
-            Text('Create the first camera source to start live monitoring.', style: theme.textTheme.bodyMedium, textAlign: TextAlign.center),
+            Text(AppLocalizations.of(context).translate('create_first_camera_source'), style: theme.textTheme.bodyMedium, textAlign: TextAlign.center),
             const SizedBox(height: 16),
             FilledButton.icon(
               onPressed: onCreate,
               icon: const Icon(Icons.add_rounded),
-              label: const Text('Create source'),
+              label: Text(AppLocalizations.of(context).translate('create_source')),
             ),
           ],
         ),

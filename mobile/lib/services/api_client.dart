@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../core/storage/app_storage.dart';
+import 'api_exception.dart';
 
 class ApiClient {
   ApiClient(this.baseUrl, this.storage);
@@ -71,9 +72,7 @@ class ApiClient {
   Map<String, dynamic> _decode(http.Response response) {
     final payload = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
     if (response.statusCode >= 400) {
-      final error = payload['error'] as Map<String, dynamic>?;
-      final message = error?['message']?.toString() ?? 'Request failed';
-      throw Exception(message);
+      throw ApiException.fromResponse(payload, response.statusCode);
     }
     return payload;
   }

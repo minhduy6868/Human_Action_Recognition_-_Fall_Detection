@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:get_it/get_it.dart';
 import 'package:intl/intl.dart';
 
-import '../services/monitoring_api.dart';
 import '../core/l10n/app_localizations.dart';
+import '../models/source.dart';
+import '../services/monitoring_api.dart';
+import '../services/sources_api.dart';
+import '../state/selected_source/selected_source_cubit.dart';
 
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
@@ -14,12 +18,17 @@ class HistoryScreen extends StatefulWidget {
 
 class _HistoryScreenState extends State<HistoryScreen> {
   final _api = GetIt.instance<MonitoringApi>();
+  final _sourcesApi = GetIt.instance<SourcesApi>();
   bool _loading = true;
   List<dynamic> _items = [];
+  List<Source> _sources = [];
+  String? _sourceId;
 
   int get _fallCount {
     return _items.where((item) {
-      final action = ((item as Map<String, dynamic>)['action'] ?? '').toString().toLowerCase();
+      final map = item as Map<String, dynamic>;
+      if (map['fall'] == true) return true;
+      final action = (map['action'] ?? '').toString().toLowerCase();
       return action == 'fall';
     }).length;
   }
@@ -27,14 +36,29 @@ class _HistoryScreenState extends State<HistoryScreen> {
   @override
   void initState() {
     super.initState();
-    _load();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _sourceId = context.read<SelectedSourceCubit>().state.selectedSourceId;
+      _load();
+    });
   }
 
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      final items = await _api.getHistory(limit: 200);
-      setState(() => _items = items);
+      final sources = await _sourcesApi.listSources();
+      final now = DateTime.now().toUtc();
+      final from = now.subtract(const Duration(hours: 24)).millisecondsSinceEpoch;
+      final items = await _api.getHistory(
+        limit: 200,
+        sourceId: _sourceId,
+        fromMs: from,
+        toMs: now.millisecondsSinceEpoch,
+      );
+      if (!mounted) return;
+      setState(() {
+        _sources = sources;
+        _items = items;
+      });
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${AppLocalizations.of(context).translate('failed')}: $e')));
     } finally {
@@ -79,6 +103,31 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                 children: [
                   _HeroCard(total: _items.length, fallCount: _fallCount),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      FilterChip(
+                        label: Text(loc.translate('all_sources')),
+                        selected: _sourceId == null,
+                        onSelected: (_) {
+                          setState(() => _sourceId = null);
+                          _load();
+                        },
+                      ),
+                      ..._sources.map(
+                        (s) => FilterChip(
+                          label: Text(s.name.isEmpty ? s.id : s.name),
+                          selected: _sourceId == s.id,
+                          onSelected: (_) {
+                            setState(() => _sourceId = s.id);
+                            _load();
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: 16),
                   if (_loading)
                     const Padding(
@@ -91,7 +140,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     ..._items.take(40).map((item) {
                       final event = item as Map<String, dynamic>;
                       final action = (event['action'] ?? 'unknown').toString();
-                      final trackId = (event['track_id'] ?? 'N/A').toString();
+                      final trackId =
+                          (event['track_id'] ?? loc.translate('not_available')).toString();
                       final timestamp = _readTimestamp(event);
                       final actionColor = _actionColor(action);
 
@@ -185,6 +235,7 @@ class _HeroCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context);
     final theme = Theme.of(context);
     return Card(
       elevation: 0,
@@ -215,16 +266,22 @@ class _HeroCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(AppLocalizations.of(context).translate('activity_history'), style: theme.textTheme.titleLarge?.copyWith(color: Colors.white, fontWeight: FontWeight.w800)),
+                  Text(loc.translate('activity_history'), style: theme.textTheme.titleLarge?.copyWith(color: Colors.white, fontWeight: FontWeight.w800)),
                   const SizedBox(height: 6),
-                  Text(AppLocalizations.of(context).translate('review_realtime_events'), style: theme.textTheme.bodyMedium?.copyWith(color: Colors.white.withOpacity(0.88))),
+                  Text(loc.translate('review_realtime_events'), style: theme.textTheme.bodyMedium?.copyWith(color: Colors.white.withOpacity(0.88))),
                   const SizedBox(height: 10),
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
                     children: [
-                      _Badge(label: '$total events', color: Colors.white),
-                      _Badge(label: '$fallCount falls', color: const Color(0xFFF36B4E)),
+                      _Badge(
+                        label: loc.translate('events_badge', {'count': total}),
+                        color: Colors.white,
+                      ),
+                      _Badge(
+                        label: loc.translate('falls_badge', {'count': fallCount}),
+                        color: const Color(0xFFF36B4E),
+                      ),
                     ],
                   ),
                 ],

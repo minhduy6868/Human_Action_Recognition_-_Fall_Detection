@@ -107,6 +107,16 @@ class ActionTimelineResponse(BaseModel):
     segments: list[ActionSegment]
 
 
+class NotableMoment(BaseModel):
+    """A human-readable snapshot for AI narrative (time + clothing + action)."""
+
+    timestamp_ms: int
+    time_label: str = ""
+    action: str = "unknown"
+    upper_color: str = "unknown"
+    track_id: str = "0"
+
+
 class ActivityInsightResponse(BaseModel):
     window_ms: int
     total_samples: int
@@ -122,6 +132,11 @@ class ActivityInsightResponse(BaseModel):
     avg_objects_count: float = 0.0
     multi_person_frames: int = 0
     top_object_labels: dict[str, int] = Field(default_factory=dict)
+    notable_moments: list[NotableMoment] = Field(default_factory=list)
+    log_narrative_lines: list[str] = Field(
+        default_factory=list,
+        description="Human-readable timeline built from detection logs (per person + parallel presence).",
+    )
 
 
 class ReportRequest(BaseModel):
@@ -131,6 +146,7 @@ class ReportRequest(BaseModel):
 
 class SummaryReportResponse(BaseModel):
     report_id: int = 0
+    source_id: str | None = None
     title: str = "Activity Summary"
     window_ms: int
     generated_at_ms: int
@@ -159,6 +175,7 @@ class SummaryQueryResponse(BaseModel):
 class ChatQueryRequest(BaseModel):
     question: str
     window_ms: int | None = None
+    source_id: str | None = None
 
 
 class ChatQueryResponse(BaseModel):

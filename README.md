@@ -1,8 +1,8 @@
-# Video AI Detect — Human Action & Fall Detection
+# Ai camcheck — Human Action & Fall Detection
 
-A realtime AI system that captures video, detects human poses, recognizes actions (standing, sitting, walking, lying, crouching, running), detects falls, identifies clothing colors, and tracks multiple people simultaneously. Includes a Python FastAPI backend and Flutter mobile/desktop frontend.
+Realtime AI camera monitoring: pose/action recognition, fall alerts (Telegram/push), clothing-aware logs, per-user data in Postgres, and a Flutter client (**Ai camcheck**).
 
-**Status**: ✅ Backend running with enhanced detection | ✅ Flutter app deployable | ✅ Multi-person tracking | ✅ Auth + Postgres logs
+**Status**: ✅ Per-user isolation (logs, chat, reports, streams) | ✅ Source-focused Home + AI | ✅ VIP multi-active cameras | ✅ Ngrok → Firebase RTDB
 
 ---
 
@@ -33,8 +33,9 @@ This section is a full feature list extracted from the current codebase.
 - **Source management (per user)**
   - Create/list/get/update/delete source connections.
   - Activate source endpoint.
-  - Free plan enforcement: max 1 source and single active source.
-  - Stream session start/stop tied to source activation.
+  - Free plan: max 1 source, only one active stream at a time.
+  - VIP plan: multiple sources; up to `VIP_MAX_ACTIVE_SOURCES` concurrent active streams (default 5).
+  - Stream sessions scoped by `user_id` (no cross-user takeover).
 - **Realtime monitoring APIs**
   - Status, people, objects, history, alerts, fall events, reports.
   - Action summary, insights, logs, log details.
@@ -57,9 +58,10 @@ This section is a full feature list extracted from the current codebase.
   - Event reasoning (loitering, crowding, suspicious movement, abandoned object).
   - Optional clothing color detection and person identity feature extraction.
 - **Persistence and analytics**
-  - Realtime logs stored to `detection_logs`.
-  - Chat history storage and plan-based AI quota checks.
-  - Alerts/reports in memory + database-backed logs endpoints.
+  - `detection_logs` with `user_id` + `source_id`; fall frames always logged when `LOG_ENABLED=true`.
+  - `summary_reports`, `alerts`, `chat_history` filtered per user.
+  - Chat AI builds answers from logs + fall alerts (timeline by shirt color / action).
+  - Deprecated unauthenticated global `/stream/mjpeg`; use `/streams/{source_id}/mjpeg`.
 - **Notifications**
   - Telegram bot polling/integration.
   - FCM push integration.
@@ -67,9 +69,9 @@ This section is a full feature list extracted from the current codebase.
 - **Runtime and infrastructure**
   - Startup initializes DB, seeds admin account, starts active sources.
   - Request ID middleware and standardized API envelope (`data/meta`, `error/meta`).
-  - Ngrok and Firebase RTDB config publishing support.
+  - Ngrok authtoken via `NGROK_AUTHTOKEN`; optional `ENABLE_AUTO_NGROK=true` publishes public URL to Firebase RTDB (`backend.json`).
 
-### Mobile Features (User App)
+### Mobile Features (User App) — Ai camcheck
 
 - **Auth UX**
   - Login, register, forgot password, reset password, Google login.
@@ -78,16 +80,17 @@ This section is a full feature list extracted from the current codebase.
   - Normal user -> Home shell (Dashboard, Analytics, AI, Settings).
   - Admin user -> Admin shell (separate flow).
 - **Dashboard and monitoring**
-  - Live MJPEG feed by active source.
-  - Realtime status badges and action/fall snapshots.
-  - Source picker and source activation shortcuts.
-  - Timeline cards from history/reports/logs APIs.
+  - `SelectedSourceCubit`: focus one camera for Home, AI, Analytics, History, Reports (persisted).
+  - Live MJPEG + `/streams/{id}/status` poll for the focused source.
+  - Quick source chips (smooth switch; green dot = stream running on backend).
+  - Timeline and reports scoped to focused `source_id`.
 - **Monitoring screens**
-  - Sources management, history list, logs, reports.
+  - Sources management (activate/stop streams), history, reports, chat history.
   - Camera monitor screen.
   - Fall detection screen.
 - **AI assistant**
-  - Chat query UI backed by `/chat/query` and chat history endpoints.
+  - Natural-language answers from detection logs (time, shirt color, actions, falls).
+  - Preset: «Trong khoảng thời gian này có gì bất thường không?»
 - **Settings**
   - Theme toggle (dark/light).
   - Language switch (vi/en localization).
@@ -122,7 +125,8 @@ This section is a full feature list extracted from the current codebase.
   - Single source limit and single active source behavior.
   - Daily AI query cap enforced server-side.
 - **VIP plan**
-  - No free-plan source limit and no free-plan AI quota cap.
+  - Multiple camera sources; several may be active concurrently (see `VIP_MAX_ACTIVE_SOURCES`).
+  - No free-plan AI quota cap.
 - **Admin role**
   - Separate app flow and privileged admin APIs.
 

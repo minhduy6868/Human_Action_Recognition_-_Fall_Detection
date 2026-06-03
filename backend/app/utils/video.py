@@ -29,6 +29,40 @@ def list_webcams(max_devices: int) -> list[dict[str, int]]:
     return cameras
 
 
+def _draw_label_box(
+    frame,
+    text: str,
+    x: int,
+    y: int,
+    *,
+    font_scale: float = 0.52,
+) -> None:
+    """Draw label with white text on a dark background for readability."""
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    thickness = 1
+    (text_w, text_h), baseline = cv2.getTextSize(text, font, font_scale, thickness)
+    pad_x, pad_y = 4, 3
+    top = max(0, y - text_h - baseline - pad_y * 2)
+    left = max(0, x)
+    cv2.rectangle(
+        frame,
+        (left, top),
+        (left + text_w + pad_x * 2, top + text_h + baseline + pad_y * 2),
+        (0, 0, 0),
+        -1,
+    )
+    cv2.putText(
+        frame,
+        text,
+        (left + pad_x, top + text_h + pad_y),
+        font,
+        font_scale,
+        (255, 255, 255),
+        thickness,
+        cv2.LINE_AA,
+    )
+
+
 def draw_detections(
     frame,
     objects: list[DetectedObject],
@@ -41,26 +75,8 @@ def draw_detections(
         color = (0, 200, 0) if det.label == "person" else (0, 128, 255)
         cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
         label = f"{det.label} {det.confidence:.2f}"
-        cv2.putText(
-            annotated,
-            label,
-            (x1, max(10, y1 - 6)),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.5,
-            color,
-            1,
-            cv2.LINE_AA,
-        )
+        _draw_label_box(annotated, label, x1, max(12, y1 - 4))
 
     status_text = f"action={action} fall={fall}"
-    cv2.putText(
-        annotated,
-        status_text,
-        (10, 20),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.6,
-        (255, 255, 255),
-        2,
-        cv2.LINE_AA,
-    )
+    _draw_label_box(annotated, status_text, 8, 28, font_scale=0.58)
     return annotated
