@@ -1,6 +1,7 @@
 import 'detected_object.dart';
 import 'person_action.dart';
 
+/// Trạng thái realtime mới nhất được backend gửi qua WebSocket.
 class RealtimeStatus {
   const RealtimeStatus({
     required this.action,
@@ -13,15 +14,31 @@ class RealtimeStatus {
     this.objects = const [],
   });
 
+  /// Nhãn hành động chính của frame hiện tại.
   final String action;
+
+  /// Độ tin cậy của hành động chính trong khoảng 0.0-1.0.
   final double confidence;
+
+  /// Đúng khi backend đang phát hiện có té ngã.
   final bool fall;
+
+  /// Độ tin cậy của phát hiện té ngã trong khoảng 0.0-1.0.
   final double fallConfidence;
+
+  /// Thời gian backend gửi về, tính bằng mili giây từ epoch.
   final int timestampMs;
+
+  /// Mã track chính được backend chọn.
   final String trackId;
+
+  /// Chi tiết hành động và té ngã theo từng người.
   final List<PersonAction> people;
+
+  /// Tất cả vật thể được phát hiện trong frame hiện tại.
   final List<DetectedObject> objects;
 
+  /// Trạng thái rỗng dùng trước khi nhận message WebSocket đầu tiên.
   factory RealtimeStatus.initial() {
     return const RealtimeStatus(
       action: 'unknown',
@@ -35,14 +52,15 @@ class RealtimeStatus {
     );
   }
 
+  /// Chuyển JSON từ WebSocket backend thành đối tượng [RealtimeStatus].
   factory RealtimeStatus.fromMap(Map<String, dynamic> map) {
-    // Parse people list
+    // Đọc danh sách người từ payload backend.
     final peopleList = (map['people'] as List<dynamic>?)
         ?.map((item) => PersonAction.fromMap(item as Map<String, dynamic>))
         .toList() ??
         [];
 
-    // Parse objects list
+    // Đọc danh sách vật thể từ payload backend.
     final objectsList = (map['objects'] as List<dynamic>?)
         ?.map((item) => DetectedObject.fromMap(item as Map<String, dynamic>))
         .toList() ??
@@ -60,6 +78,7 @@ class RealtimeStatus {
     );
   }
 
+  /// Tạo bản sao mới và thay thế các trường được truyền vào.
   RealtimeStatus copyWith({
     String? action,
     double? confidence,

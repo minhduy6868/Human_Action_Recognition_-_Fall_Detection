@@ -1,5 +1,6 @@
 import 'person_action.dart';
 
+/// Vật thể được pipeline YOLO ở backend phát hiện.
 class DetectedObject {
   const DetectedObject({
     required this.classId,
@@ -14,17 +15,31 @@ class DetectedObject {
     this.isPerson = false,
   });
 
+  /// Mã lớp dạng số của vật thể từ detector.
   final int classId;
+
+  /// Nhãn dễ đọc cho người dùng, ví dụ "person" hoặc "chair".
   final String label;
+
+  /// Độ tin cậy của detector trong khoảng 0.0-1.0.
   final double confidence;
+
+  /// Tọa độ khung bao quanh vật thể tính theo pixel ảnh.
   final double x1;
   final double y1;
   final double x2;
   final double y2;
+
+  /// Mã theo dõi do backend tracker gán nếu có.
   final String trackId;
+
+  /// Màu quần áo, thường chỉ có khi vật thể là người.
   final PersonClothing clothing;
+
+  /// Đúng khi vật thể này là người.
   final bool isPerson;
 
+  /// Chuyển JSON backend thành đối tượng [DetectedObject].
   factory DetectedObject.fromMap(Map<String, dynamic> map) {
     return DetectedObject(
       classId: (map['class_id'] as num?)?.toInt() ?? -1,
@@ -55,7 +70,7 @@ class DetectedObject {
     'is_person': isPerson,
   };
 
-  /// Get object type description
+  /// Tên hiển thị được dùng trong widget danh sách vật thể.
   String get objectType {
     if (isPerson) return 'Person';
     return label.replaceFirst(label[0], label[0].toUpperCase());

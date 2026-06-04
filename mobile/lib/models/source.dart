@@ -1,3 +1,4 @@
+/// Nguồn camera hoặc video được cấu hình cho backend giám sát.
 class Source {
   const Source({
     required this.id,
@@ -7,12 +8,22 @@ class Source {
     required this.isActive,
   });
 
+  /// Mã nguồn trên backend.
   final String id;
+
+  /// Tên nguồn để hiển thị cho người dùng.
   final String name;
+
+  /// Loại nguồn, ví dụ rtsp, webcam, file hoặc mjpeg.
   final String sourceType;
+
+  /// URL, đường dẫn file hoặc chỉ số webcam được lưu dạng chuỗi.
   final String sourceUrl;
+
+  /// Đúng khi nguồn này là stream đang hoạt động trên backend.
   final bool isActive;
 
+  /// Chuyển JSON backend thành đối tượng [Source].
   factory Source.fromMap(Map<String, dynamic> map) {
     return Source(
       id: map['id'] as String? ?? '',

@@ -1,12 +1,17 @@
+/// Màu quần áo được phát hiện cho một người.
 class PersonClothing {
   const PersonClothing({
     required this.upper,
     required this.lower,
   });
 
+  /// Màu chủ đạo của phần áo.
   final String upper;
+
+  /// Màu chủ đạo của phần quần.
   final String lower;
 
+  /// Chuyển JSON backend thành dữ liệu màu quần áo.
   factory PersonClothing.fromMap(Map<String, dynamic> map) {
     return PersonClothing(
       upper: (map['upper'] as String?) ?? 'unknown',
@@ -20,6 +25,7 @@ class PersonClothing {
   };
 }
 
+/// Kết quả realtime về hành động và té ngã của từng người.
 class PersonAction {
   const PersonAction({
     required this.trackId,
@@ -35,18 +41,34 @@ class PersonAction {
     this.personId = '',
   });
 
+  /// Mã tracker dùng để giữ cùng một người ổn định qua các frame.
   final String trackId;
+
+  /// Nhãn hành động hiện tại do backend dự đoán.
   final String action;
+
+  /// Độ tin cậy của hành động trong khoảng 0.0-1.0.
   final double confidence;
+
+  /// Đúng khi người này đang được xem là bị ngã hoặc đã ngã.
   final bool fall;
+
+  /// Độ tin cậy của phát hiện té ngã trong khoảng 0.0-1.0.
   final double fallConfidence;
+
+  /// Tọa độ khung bao quanh người tính theo pixel ảnh.
   final double bboxX1;
   final double bboxY1;
   final double bboxX2;
   final double bboxY2;
+
+  /// Mô tả màu quần áo nếu backend cung cấp.
   final PersonClothing clothing;
+
+  /// Mã định danh người ổn định nếu backend có thể cung cấp.
   final String personId;
 
+  /// Chuyển JSON backend thành đối tượng [PersonAction].
   factory PersonAction.fromMap(Map<String, dynamic> map) {
     return PersonAction(
       trackId: (map['track_id'] as String?) ?? '0',
@@ -79,6 +101,7 @@ class PersonAction {
     'person_id': personId,
   };
 
+  /// Tạo bản sao mới và thay thế các trường được truyền vào.
   PersonAction copyWith({
     String? trackId,
     String? action,
@@ -107,7 +130,7 @@ class PersonAction {
     );
   }
 
-  /// Get action display name
+  /// Tên hành động để hiển thị cho người dùng.
   String get actionDisplay {
     switch (action.toLowerCase()) {
       case 'standing':
@@ -127,7 +150,7 @@ class PersonAction {
     }
   }
 
-  /// Get clothing description
+  /// Mô tả quần áo để hiển thị cho người dùng.
   String get clothingDescription {
     if (clothing.upper == 'unknown' && clothing.lower == 'unknown') {
       return 'Unknown clothing';
